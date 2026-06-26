@@ -1,0 +1,7 @@
+[
+  {"id":"P-001","name":"Alice","avatar":"alice.png","constraints":{"available_days":["FRI","SAT"],"budget_max":120,"dietary":[],"max_travel_min":45,"origin":"Bishan"},"freeform":"down for anything fun, happy to book"},
+  {"id":"P-002","name":"Bob","avatar":"bob.png","constraints":{"available_days":["FRI","SUN"],"budget_max":40,"dietary":["no_raw_fish"],"max_travel_min":30,"origin":"Tampines"},"freeform":"broke this week, somewhere chill, not raw fish"},
+  {"id":"P-003","name":"Carol","avatar":"carol.png","constraints":{"available_days":["FRI"],"budget_max":90,"dietary":["vegetarian"],"max_travel_min":40,"origin":"Clementi"},"freeform":"needs veg options, loves a good arcade"},
+  {"id":"P-004","name":"Dave","avatar":"dave.png","constraints":{"available_days":["FRI","SAT"],"budget_max":100,"dietary":[],"max_travel_min":60,"origin":"Pasir Ris"},"freeform":"anywhere with good meat"},
+  {"id":"P-005","name":"Eve","avatar":"eve.png","constraints":{"available_days":["FRI","SAT"],"budget_max":80,"dietary":["halal"],"max_travel_min":30,"origin":"Jurong"},"freeform":"halal please, walkable area"}
+]
