@@ -16,7 +16,7 @@ Built for 'Sup **Build2026** (27 Jun 2026). **Full 14-screen webapp.**
 ## Architecture
 
 ```
-frontend/  →  Leeshan's Next.js app (14 screens, cream/coral) — build from ORKESTR_FRONTEND.md
+frontend/  →  Next.js app (14 screens, cream/coral) — build from ORKESTR_FRONTEND.md
    │  HTTP (lib/api.js)
    ▼
 backend (repo root)  →  FastAPI implementing the frontend's REST contract
