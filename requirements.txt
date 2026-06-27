@@ -4,3 +4,8 @@ openai==1.48
 python-dotenv==1.0.1
 exa-py==2.14.0
 stripe==10.12.0
+# Faithful x402 HTTP 402 booking payment (Base Sepolia). [evm]=web3+eth-account
+# for the buyer signer, [requests] for the sync buyer wrapper. NOT [fastapi] —
+# that extra forces fastapi[standard]>=0.115.0 and we pin fastapi==0.111.0; the
+# merchant 402 is handled manually at route level instead.
+x402[evm,requests]==2.14.0

@@ -506,8 +506,48 @@ def _fallback_strike_booking(plan: dict, error=None) -> dict:
     return {"request": request, "response": response, "mandate": mandate}
 
 
-def strike_booking(plan: dict) -> dict:
-    """Open the ACP handshake with the merchant agent and co-sign payment."""
+def _x402_failed_booking(basics: dict, session, decision: dict) -> dict:
+    """Controlled failure when REQUIRE_REAL_X402=true and x402 didn't complete.
+
+    No Stripe charge, no crash, no secret leak — the ACP session is left
+    uncompleted and the mandate is marked payment_failed.
+    """
+    session = session or {}
+    counter_time = session.get("counter_time") or basics["plan_time"]
+    request = {
+        "party_size": basics["party_size"],
+        "day": basics["day"],
+        "time": basics["request_time"],
+        "request_time": basics["request_time"],
+        "budget_total": basics["total_amount"],
+        "needs": basics["needs"],
+    }
+    response = {**session, "counter_time": counter_time, "time_offered": counter_time}
+    mandate = {
+        "cart_id": session.get("id", "CART-X402-FAILED"),
+        "merchant": basics["venue"].get("name", "Unknown Venue"),
+        "items": session.get("line_items", []),
+        "merchant_signature": session.get("id", ""),
+        "buyer_authorization": None,
+        "status": "payment_failed",
+        "booking_ref": basics["booking_ref"],
+        "acp_status": "x402_required_failed",
+        "vault_token": {"id": "x402_failed", "mode": "x402_failed"},
+        "order": {"booking_ref": basics["booking_ref"], "status": "unconfirmed"},
+        "payment_mode": "x402_failed",
+        "x402": {"reason": decision.get("reason"), "required": True},
+    }
+    return {"request": request, "response": response, "mandate": mandate}
+
+
+def strike_booking(plan: dict, allow_x402: bool = False) -> dict:
+    """Open the ACP handshake with the merchant agent and co-sign payment.
+
+    When allow_x402 is True (live, non-ORK sessions only) and USE_REAL_X402 is
+    on, the booking payment is made via a faithful x402 HTTP 402 handshake to
+    the merchant endpoint instead of the Stripe/mock delegate payment. ORK-001
+    always calls with the default allow_x402=False, so it is never affected.
+    """
     basics = _booking_basics(plan)
     try:
         from datetime import datetime, timedelta, timezone
@@ -550,16 +590,56 @@ def strike_booking(plan: dict) -> dict:
             "checkout_session_id": session["id"],
             "expires_at": expires_at,
         }
-        token = acp_payment.delegate_payment(allowance)
-        completed = acp_checkout.complete_session(
-            session["id"],
-            payment_data={
+        # ---- payment point: faithful x402 (live only) or ACP Stripe/mock ----
+        decision = {"action": "fallback", "mode": None}
+        if allow_x402:
+            from payments import x402_protocol as XP
+            decision = XP.resolve_booking_payment({
+                "booking_ref": basics["booking_ref"],
+                "merchant": basics["venue"].get("name", "Unknown Venue"),
+                "party_size": basics["party_size"],
+                "day": basics["day"],
+                "time": basics["plan_time"],
+            })
+
+        if decision["action"] == "controlled_failure":
+            return _x402_failed_booking(basics, session, decision)
+
+        x402_mandate = None
+        if decision["action"] in ("use_x402", "proceed_uncertain"):
+            # x402 already paid (or signed-but-uncertain): do NOT delegate_payment
+            # again — that would double-charge (Amendment 2).
+            from payments import x402_protocol as XP
+            cfg = XP.get_x402_config()
+            tx = decision.get("tx_hash") or decision["mode"]
+            token = {"id": f"x402_{str(tx)[:48]}", "mode": decision["mode"]}
+            payment_data = {
+                "vault_token": token["id"],
+                "mode": token["mode"],
+                "booking_ref": basics["booking_ref"],
+                "x402": True,
+            }
+            x402_mandate = {
+                "mode": decision["mode"],
+                "tx_hash": decision.get("tx_hash"),
+                "payment_response": decision.get("payment_response"),
+                "parse_warning": decision.get("parse_warning"),
+                "network": cfg["network"],
+                "facilitator": cfg["facilitator_url"],
+                "reason": decision.get("reason"),
+            }
+        else:
+            # Existing ACP path: USE_REAL_X402 off, or x402 clearly incomplete
+            # and not required -> fall back to Stripe/mock delegate payment.
+            token = acp_payment.delegate_payment(allowance)
+            payment_data = {
                 "vault_token": token["id"],
                 "mode": token.get("mode"),
                 "stripe_payment_intent": token.get("stripe_payment_intent"),
                 "booking_ref": basics["booking_ref"],
-            },
-        )
+            }
+
+        completed = acp_checkout.complete_session(session["id"], payment_data=payment_data)
         order = completed.get("order", {})
         counter_time = session.get("counter_time") or basics["plan_time"]
         request = {
@@ -598,8 +678,10 @@ def strike_booking(plan: dict) -> dict:
             "acp_status": completed.get("status", "completed"),
             "vault_token": token,
             "order": order,
-            "payment_mode": token.get("mode", "mock"),
+            "payment_mode": x402_mandate["mode"] if x402_mandate else token.get("mode", "mock"),
         }
+        if x402_mandate:
+            mandate["x402"] = x402_mandate
         return {"request": request, "response": response, "mandate": mandate}
     except Exception as exc:
         return _fallback_strike_booking(plan, error=exc)

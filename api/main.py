@@ -10,8 +10,9 @@ Run from the repo root:
 import json
 import os
 
-from fastapi import Body, FastAPI, HTTPException
+from fastapi import Body, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from core import session as S
 
@@ -69,6 +70,22 @@ def personas():
 @app.get("/venues")
 def venues():
     return _load("venues.json")
+
+
+# ---- x402: the merchant agent's payment-protected booking resource ----
+# Faithful x402 HTTP 402 handshake (Path B), handled MANUALLY at route level so
+# the project keeps fastapi==0.111.0 (the x402 FastAPI middleware would force
+# fastapi>=0.115.0). Sync def -> runs in the threadpool, so the blocking
+# facilitator call never blocks the event loop. Inert (404) unless USE_REAL_X402
+# is on AND merchant config is present. Never mutates sessions; never touches
+# ORK-001. Only this single route is payment-gated; CORS/other routes untouched.
+@app.post("/api/x402/merchant/book")
+def x402_merchant_book(payload: dict = Body(default={}),
+                       x_payment: str = Header(default=None, alias="X-PAYMENT")):
+    from payments import x402_protocol as XP
+
+    status_code, body_out, headers = XP.handle_merchant_payment(x_payment, payload)
+    return JSONResponse(status_code=status_code, content=body_out, headers=headers)
 
 
 # ---- Phase 1: before the meal ----

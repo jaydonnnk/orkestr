@@ -129,7 +129,9 @@ def compute_plan(sid):
     neg = run_negotiation(candidates, members)
     s["negotiation"] = neg["messages"]
     s["plan"] = neg["plan"]
-    booking = strike_booking(s["plan"])
+    # allow_x402 only for live sessions; ORK-001's seed_demo keeps the default
+    # allow_x402=False, so the frozen demo never attempts a real x402 payment.
+    booking = strike_booking(s["plan"], allow_x402=bool(s.get("live")))
     s["handshake"] = {
         "request": booking["request"],
         "response": booking["response"],
