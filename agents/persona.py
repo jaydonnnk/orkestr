@@ -51,7 +51,8 @@ def _dietary_objection(persona: dict, plan: dict):
 def stance(persona: dict, plan: dict, round_no: int = 1) -> dict:
     """Return this persona's stance on the proposed plan."""
     constraints = persona.get("constraints") or {}
-    name = persona.get("name", persona.get("id", "Someone"))
+    agent_id = persona.get("id", "UNKNOWN")
+    name = persona.get("name", agent_id)
     plan_id = plan.get("plan_id", "PLAN-1")
 
     available_days = constraints.get("available_days") or []
@@ -59,7 +60,7 @@ def stance(persona: dict, plan: dict, round_no: int = 1) -> dict:
     if available_days and day not in available_days:
         return {
             "round": round_no,
-            "agent": persona["id"],
+            "agent": agent_id,
             "stance": "object",
             "claim": f"{name} cannot do {day}; available days: {', '.join(available_days)}",
             "targets_plan": plan_id,
@@ -71,7 +72,7 @@ def stance(persona: dict, plan: dict, round_no: int = 1) -> dict:
     if budget_max is not None and per_person is not None and per_person > budget_max:
         return {
             "round": round_no,
-            "agent": persona["id"],
+            "agent": agent_id,
             "stance": "object",
             "claim": f"${per_person}/head is over {name}'s ${budget_max} cap",
             "targets_plan": plan_id,
@@ -88,7 +89,7 @@ def stance(persona: dict, plan: dict, round_no: int = 1) -> dict:
         }
         return {
             "round": round_no,
-            "agent": persona["id"],
+            "agent": agent_id,
             "stance": "object",
             "claim": f"{name} needs {labels.get(dietary_issue, dietary_issue)}",
             "targets_plan": plan_id,
@@ -97,7 +98,7 @@ def stance(persona: dict, plan: dict, round_no: int = 1) -> dict:
 
     return {
         "round": round_no,
-        "agent": persona["id"],
+        "agent": agent_id,
         "stance": "accept",
         "claim": f"{name} accepts: day, budget, and dietary needs fit",
         "targets_plan": plan_id,
