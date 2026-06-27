@@ -254,6 +254,25 @@ def _infer_vegetarian(title: str, highlights_text: str) -> bool:
     return any(w in text for w in ("vegetarian", "vegan", "plant-based", "meat-free"))
 
 
+_NON_RESTAURANT_TERMS = (
+    "venue rental", "event space", "event venue", "events rental", "function room",
+    "wedding", "conference", "co-working", "coworking", "office space",
+    "party hall", "banquet hall rental", "caterer", "catering service",
+    "real estate", "for rent", "for lease", "hotel booking", "airbnb",
+    "things to do", "best restaurants", "top 10", "guide to", "listicle",
+)
+
+
+def _looks_like_restaurant(title: str) -> bool:
+    """Heuristic: keep dining venues, drop rentals/event-spaces/listicles.
+
+    Conservative — only rejects on an explicit non-dining signal so a plain
+    restaurant name (which carries no positive keyword) still passes.
+    """
+    t = title.lower()
+    return not any(term in t for term in _NON_RESTAURANT_TERMS)
+
+
 def _infer_near_arcade(title: str, highlights_text: str) -> bool:
     text = _full_text(title, highlights_text)
     return any(w in text for w in (
@@ -364,6 +383,12 @@ def normalize_exa_result(
         "twitter.com", "x.com", "youtube.com", "tiktok.com",
     )
     if any(d in url.lower() for d in irrelevant_domains):
+        return None
+
+    # Drop results that clearly aren't a place you eat at — event-space rentals,
+    # caterers, booking aggregators, blog listicles. Exa sometimes returns these
+    # for a "group dinner venue" query and they poison the negotiation.
+    if not _looks_like_restaurant(title):
         return None
 
     raw_highlights = _safe_get(result, "highlights") or []

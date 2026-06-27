@@ -402,16 +402,28 @@ function NegotiationPhone({ messages, plan }: { messages: Message[]; plan: Plan 
   const visibleMessages = messages.slice(-6);
   const conflicts = Array.isArray(plan.conflicts) ? plan.conflicts : [];
 
+  const accepted = Array.isArray(plan.satisfies) ? plan.satisfies : [];
+  const acceptedSet = new Set(accepted);
+  const conflictAgents = conflicts.map((c) => c.agent).filter(Boolean) as string[];
+  const agents = Array.from(new Set([...accepted, ...conflictAgents]));
+  const ringAgents = agents.length > 0 ? agents : ["P-001", "P-002", "P-003", "P-004", "P-005"];
+  const total = ringAgents.length;
+  const acceptedCount = agents.length > 0 ? accepted.length : total;
+
   return (
     <Phone eyebrow="2 - Agents converge" title="Finding your plan..." moneyShot>
-      <p className={styles.subtitle}>Five agents, one Friday night</p>
+      <p className={styles.subtitle}>{total} agents, one night out</p>
       <div className={styles.ring} aria-label="Agent negotiation ring">
-        {["P-001", "P-002", "P-003", "P-004", "P-005"].map((id) => (
-          <span key={id} className={`${styles.agentDot} ${styles[`dot${personInitial(id)}`]}`}>
+        {ringAgents.map((id) => (
+          <span
+            key={id}
+            data-stance={acceptedSet.has(id) ? "accept" : "object"}
+            className={`${styles.agentDot} ${styles[`dot${personInitial(id)}`] ?? ""}`}
+          >
             {personInitial(id)}
           </span>
         ))}
-        <strong>3 -&gt; 1</strong>
+        <strong>{acceptedCount}/{total} agree</strong>
       </div>
       <ul className={styles.messageList}>
         {visibleMessages.map((message, index) => (
