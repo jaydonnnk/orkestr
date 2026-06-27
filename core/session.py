@@ -10,7 +10,10 @@ import json
 import os
 import uuid
 
-from agents.convener import generate_candidates, run_negotiation, strike_booking
+from fastapi import HTTPException
+
+from agents.convener import (generate_candidates, run_negotiation, strike_booking,
+                             _seeded_plan, _seeded_messages)
 from core.settlement import compute_net, simplify
 from payments.x402 import stamp
 
@@ -51,6 +54,10 @@ def new_session(name=None, date_range=None):
 
 
 def add_constraints(sid, person):
+    if sid not in SESSIONS:
+        raise HTTPException(status_code=404, detail="session not found")
+    if not person.get("id"):
+        raise HTTPException(status_code=400, detail="id required")
     s = SESSIONS[sid]
     s["members"] = [m for m in s["members"] if m["id"] != person.get("id")] + [person]
     return s
@@ -58,6 +65,8 @@ def add_constraints(sid, person):
 
 def compute_plan(sid):
     """Negotiation -> plan -> venue handshake. Moves phase to plan_ready."""
+    if sid not in SESSIONS:
+        raise HTTPException(status_code=404, detail="session not found")
     s = SESSIONS[sid]
     members = _members(s)
     venues = _load("venues.json")
@@ -80,7 +89,14 @@ def compute_plan(sid):
 
 
 def approve_plan(sid, person_id):
+    if sid not in SESSIONS:
+        raise HTTPException(status_code=404, detail="session not found")
+    if not person_id:
+        raise HTTPException(status_code=400, detail="person_id required")
     s = SESSIONS[sid]
+    member_ids = [m["id"] for m in _members(s)]
+    if person_id not in member_ids:
+        raise HTTPException(status_code=400, detail="unknown person_id")
     if person_id not in s["approvals"]:
         s["approvals"].append(person_id)
     if len(s["approvals"]) >= len(_members(s)):
@@ -91,6 +107,8 @@ def approve_plan(sid, person_id):
 
 
 def add_expense(sid, expense):
+    if sid not in SESSIONS:
+        raise HTTPException(status_code=404, detail="session not found")
     s = SESSIONS[sid]
     expense.setdefault("id", "EXP-" + uuid.uuid4().hex[:4])
     s["expenses"].append(expense)
@@ -100,11 +118,15 @@ def add_expense(sid, expense):
 
 def set_fronted(sid, fronted):
     """S11 confirm-fronted: override the fronted map and recompute."""
+    if sid not in SESSIONS:
+        raise HTTPException(status_code=404, detail="session not found")
     SESSIONS[sid]["_fronted_override"] = fronted
     return recompute_settlement(sid)
 
 
 def recompute_settlement(sid):
+    if sid not in SESSIONS:
+        raise HTTPException(status_code=404, detail="session not found")
     s = SESSIONS[sid]
     ids = [m["id"] for m in _members(s)]
     if s.get("_fronted_override"):
@@ -132,6 +154,8 @@ def recompute_settlement(sid):
 
 
 def approve_transfer(sid, person_id):
+    if sid not in SESSIONS:
+        raise HTTPException(status_code=404, detail="session not found")
     s = SESSIONS[sid]
     st = s["settlement"] or recompute_settlement(sid)
     for t in st["transfers"]:
@@ -154,11 +178,27 @@ def seed_demo():
         "negotiation": [],
         "plan": None,
         "handshake": None,
-        "approvals": [],
+        "approvals": ["P-001", "P-003", "P-004", "P-005"],
         "expenses": [],
         "settlement": None,
     }
     compute_plan("ORK-001")
+    # Pin ORK-001 to frozen demo values; real negotiation may not converge
+    # to the demo-perfect story (Bob's budget_max < Seoul Garden per_person).
+    s = SESSIONS["ORK-001"]
+    seeded_plan = _seeded_plan(s["members"])
+    booking = strike_booking(seeded_plan)
+    s["negotiation"] = _seeded_messages()
+    s["plan"] = seeded_plan
+    s["handshake"] = {
+        "request": booking["request"],
+        "response": booking["response"],
+        "mandate": booking["mandate"],
+        "booking_ref": booking["mandate"]["booking_ref"],
+        "status": booking["mandate"]["status"],
+        "merchant": booking["mandate"]["merchant"],
+    }
+    s["phase"] = "plan_ready"
     for e in [
         {"paid_by": "P-001", "amount": 240, "description": "Dinner — KBBQ set", "split": "even"},
         {"paid_by": "P-002", "amount": 100, "description": "Arcade credit", "split": "even"},
