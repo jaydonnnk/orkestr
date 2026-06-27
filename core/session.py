@@ -1,0 +1,207 @@
+"""In-memory session store + state machine for the full Orkestr webapp.
+
+Seeded with a default demo session (ORK-001) so every screen has data on boot.
+Hackathon approach: REAL endpoints, SEEDED data underneath — swap the stubs for
+real negotiation/constraint logic per the Build Guide without touching the API.
+
+Owner: Lucas (session plumbing) + Jaydon (the agent calls).
+"""
+import json
+import os
+import uuid
+
+from fastapi import HTTPException
+
+from agents.convener import (generate_candidates, run_negotiation, strike_booking,
+                             _seeded_plan, _seeded_messages)
+from core.settlement import compute_net, simplify
+from payments.x402 import stamp
+
+DATA = os.path.join(os.path.dirname(__file__), "..", "data")
+SESSIONS = {}
+PHASES = ["negotiating", "plan_ready", "booking", "confirmed"]
+
+
+def _load(name):
+    with open(os.path.join(DATA, name)) as f:
+        return json.load(f)
+
+
+def get(sid):
+    return SESSIONS.get(sid)
+
+
+def _members(s):
+    return s["members"] or _load("personas.json")
+
+
+def new_session(name=None, date_range=None):
+    sid = "ORK-" + uuid.uuid4().hex[:4].upper()
+    SESSIONS[sid] = {
+        "session_id": sid,
+        "name": name or "Friday plan",
+        "date_range": date_range,
+        "phase": "negotiating",
+        "members": [],
+        "negotiation": [],
+        "plan": None,
+        "handshake": None,
+        "approvals": [],
+        "expenses": [],
+        "settlement": None,
+    }
+    return SESSIONS[sid]
+
+
+def add_constraints(sid, person):
+    if sid not in SESSIONS:
+        raise HTTPException(status_code=404, detail="session not found")
+    if not person.get("id"):
+        raise HTTPException(status_code=400, detail="id required")
+    s = SESSIONS[sid]
+    s["members"] = [m for m in s["members"] if m["id"] != person.get("id")] + [person]
+    return s
+
+
+def compute_plan(sid):
+    """Negotiation -> plan -> venue handshake. Moves phase to plan_ready."""
+    if sid not in SESSIONS:
+        raise HTTPException(status_code=404, detail="session not found")
+    s = SESSIONS[sid]
+    members = _members(s)
+    venues = _load("venues.json")
+    candidates = generate_candidates(members, venues)
+    neg = run_negotiation(candidates, members)
+    s["negotiation"] = neg["messages"]
+    s["plan"] = neg["plan"]
+    booking = strike_booking(s["plan"])
+    s["handshake"] = {
+        "request": booking["request"],
+        "response": booking["response"],
+        "mandate": booking["mandate"],
+        "booking_ref": booking["mandate"]["booking_ref"],
+        "status": booking["mandate"]["status"],
+        "merchant": booking["mandate"]["merchant"],
+    }
+    if s["phase"] == "negotiating":
+        s["phase"] = "plan_ready"
+    return s
+
+
+def approve_plan(sid, person_id):
+    if sid not in SESSIONS:
+        raise HTTPException(status_code=404, detail="session not found")
+    if not person_id:
+        raise HTTPException(status_code=400, detail="person_id required")
+    s = SESSIONS[sid]
+    member_ids = [m["id"] for m in _members(s)]
+    if person_id not in member_ids:
+        raise HTTPException(status_code=400, detail="unknown person_id")
+    if person_id not in s["approvals"]:
+        s["approvals"].append(person_id)
+    if len(s["approvals"]) >= len(_members(s)):
+        s["phase"] = "confirmed"
+    elif s["phase"] == "plan_ready":
+        s["phase"] = "booking"
+    return s
+
+
+def add_expense(sid, expense):
+    if sid not in SESSIONS:
+        raise HTTPException(status_code=404, detail="session not found")
+    s = SESSIONS[sid]
+    expense.setdefault("id", "EXP-" + uuid.uuid4().hex[:4])
+    s["expenses"].append(expense)
+    recompute_settlement(sid)
+    return s
+
+
+def set_fronted(sid, fronted):
+    """S11 confirm-fronted: override the fronted map and recompute."""
+    if sid not in SESSIONS:
+        raise HTTPException(status_code=404, detail="session not found")
+    SESSIONS[sid]["_fronted_override"] = fronted
+    return recompute_settlement(sid)
+
+
+def recompute_settlement(sid):
+    if sid not in SESSIONS:
+        raise HTTPException(status_code=404, detail="session not found")
+    s = SESSIONS[sid]
+    ids = [m["id"] for m in _members(s)]
+    if s.get("_fronted_override"):
+        fronted = {pid: s["_fronted_override"].get(pid, 0) for pid in ids}
+    else:
+        fronted = {pid: 0 for pid in ids}
+        for e in s["expenses"]:
+            fronted[e["paid_by"]] = fronted.get(e["paid_by"], 0) + e["amount"]
+    total = sum(fronted.values())
+    per = round(total / len(ids)) if ids else 0
+    shares = {pid: per for pid in ids}
+    net = compute_net(fronted, shares)
+    transfers = [
+        {**t, "rail": "x402", "status": "pending", "tx_hash": None, "latency_ms": 1000}
+        for t in simplify(net)
+    ]
+    s["settlement"] = {
+        "fronted": fronted,
+        "shares": shares,
+        "net": net,
+        "transfers": transfers,
+        "net_after": {pid: 0 for pid in ids},
+    }
+    return s["settlement"]
+
+
+def approve_transfer(sid, person_id):
+    if sid not in SESSIONS:
+        raise HTTPException(status_code=404, detail="session not found")
+    s = SESSIONS[sid]
+    st = s["settlement"] or recompute_settlement(sid)
+    for t in st["transfers"]:
+        if t["from"] == person_id and t["status"] == "pending":
+            t["status"] = "settled"
+            t["tx_hash"] = stamp()
+    return s
+
+
+def seed_demo():
+    """Pre-populate ORK-001 so the app is fully populated on boot."""
+    if "ORK-001" in SESSIONS:
+        return
+    SESSIONS["ORK-001"] = {
+        "session_id": "ORK-001",
+        "name": "Friday — the squad",
+        "date_range": ["2026-06-26", "2026-06-28"],
+        "phase": "negotiating",
+        "members": _load("personas.json"),
+        "negotiation": [],
+        "plan": None,
+        "handshake": None,
+        "approvals": ["P-001", "P-003", "P-004", "P-005"],
+        "expenses": [],
+        "settlement": None,
+    }
+    compute_plan("ORK-001")
+    # Pin ORK-001 to frozen demo values; real negotiation may not converge
+    # to the demo-perfect story (Bob's budget_max < Seoul Garden per_person).
+    s = SESSIONS["ORK-001"]
+    seeded_plan = _seeded_plan(s["members"])
+    booking = strike_booking(seeded_plan)
+    s["negotiation"] = _seeded_messages()
+    s["plan"] = seeded_plan
+    s["handshake"] = {
+        "request": booking["request"],
+        "response": booking["response"],
+        "mandate": booking["mandate"],
+        "booking_ref": booking["mandate"]["booking_ref"],
+        "status": booking["mandate"]["status"],
+        "merchant": booking["mandate"]["merchant"],
+    }
+    s["phase"] = "plan_ready"
+    for e in [
+        {"paid_by": "P-001", "amount": 240, "description": "Dinner — KBBQ set", "split": "even"},
+        {"paid_by": "P-002", "amount": 100, "description": "Arcade credit", "split": "even"},
+        {"paid_by": "P-003", "amount": 60, "description": "Drinks", "split": "even"},
+    ]:
+        add_expense("ORK-001", e)

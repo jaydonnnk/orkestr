@@ -1,0 +1,5 @@
+[
+  {"id":"seoul_garden","name":"Seoul Garden","halal":true,"vegetarian":true,"price_per_head":48,"capacity":6,"opens":"17:00","closes":"23:00","near_arcade":true,"lat":1.3010,"lng":103.8480},
+  {"id":"sushi_hiro","name":"Sushi Hiro","halal":true,"vegetarian":false,"price_per_head":70,"capacity":8,"opens":"18:00","closes":"22:00","near_arcade":false,"lat":1.3040,"lng":103.8320},
+  {"id":"veggie_table","name":"Veggie Table","halal":true,"vegetarian":true,"price_per_head":35,"capacity":4,"opens":"12:00","closes":"21:00","near_arcade":false,"lat":1.2980,"lng":103.8510}
+]

@@ -1,0 +1,9 @@
+{
+  "cart_id": "CART-1",
+  "merchant": "Seoul Garden",
+  "items": [{"desc": "KBBQ set · table of 5 · FRI 19:30", "amount": 240}],
+  "merchant_signature": "0xVENUE_SEOUL_GARDEN",
+  "buyer_authorization": "0xCONVENER_CART-1",
+  "status": "co-signed",
+  "booking_ref": "SG-2026-0627-77"
+}
