@@ -417,18 +417,54 @@ def strike_booking(plan: dict) -> dict:
     """Open the handshake with the Venue agent and co-sign the cart (Act 2)."""
     plan = plan or {}
     venue = plan.get("venue") or {}
+    plan_time = plan.get("time") or "19:30"
+    day = plan.get("day", "FRI")
+    satisfies = plan.get("satisfies") or []
+    party_size = len(satisfies) if isinstance(satisfies, list) else 0
+    party_size = party_size or 5
+
+    try:
+        hour, minute = [int(part) for part in str(plan_time).split(":", 1)]
+        total_minutes = max(0, hour * 60 + minute - 30)
+        request_time = f"{total_minutes // 60:02d}:{total_minutes % 60:02d}"
+    except (TypeError, ValueError):
+        request_time = "19:00"
+
+    need_labels = {
+        "halal": "halal",
+        "vegetarian": "vegetarian_option",
+        "vegetarian_option": "vegetarian_option",
+    }
+    tags = venue.get("tags") or []
+    if isinstance(tags, str):
+        tags = [tags]
+    elif not isinstance(tags, list):
+        tags = []
+    needs = sorted({
+        need_labels[tag]
+        for tag in (str(tag).lower() for tag in tags)
+        if tag in need_labels
+    })
+
     request = {
-        "party_size": len(plan.get("satisfies", [])) or 5,
-        "day": plan.get("day", "FRI"),
-        "time": "19:00",
-        "budget_total": plan.get("total_cost", 400),
-        "needs": ["halal", "vegetarian_option"],
+        "party_size": party_size,
+        "day": day,
+        "time": request_time,
+        "request_time": request_time,
+        "budget_total": plan.get("total_cost"),
+        "needs": needs,
     }
     response = venue_agent.check_availability(request)
+    counter_time = response.get("time_offered") or plan_time
+    response = {**response, "counter_time": counter_time}
+    booking_ref = plan.get("booking_ref") or f"BK-{venue.get('id', 'venue')}-{day}"
     cart = {
         "cart_id": "CART-1",
-        "items": [{"desc": "KBBQ set - table of 5 - FRI 19:30", "amount": response["price_total"]}],
-        "booking_ref": "SG-2026-0627-77",
+        "items": [{
+            "desc": f"{plan.get('title', 'Dinner plan')} - table of {party_size} - {day} {counter_time}",
+            "amount": response.get("price_total", plan.get("total_cost", 0)),
+        }],
+        "booking_ref": booking_ref,
     }
     mandate = cosign(cart, venue.get("name", "Unknown Venue"))
     return {"request": request, "response": response, "mandate": mandate}
