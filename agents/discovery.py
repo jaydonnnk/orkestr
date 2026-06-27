@@ -147,22 +147,33 @@ def build_venue_query(
     cuisine_terms: set = set()
     location_terms: set = set()
 
+    has_vegetarian = False
+    has_meat_eater = False
+
     if personas and isinstance(personas, list):
         party_size = len(personas)
         parts.append(f"for {party_size} people")
 
         for p in personas:
             c = p.get("constraints") or {}
+            diet = [str(d).lower() for d in (c.get("dietary") or [])]
+            is_veg = any(d in ("vegetarian", "vegan") for d in diet)
+            has_vegetarian = has_vegetarian or is_veg
+            # Anyone without a veg restriction (or who explicitly wants meat) is an
+            # omnivore the venue must also serve.
+            if not is_veg:
+                has_meat_eater = True
+            if "meat" in str(p.get("freeform", "")).lower():
+                has_meat_eater = True
 
-            for d in c.get("dietary") or []:
-                d_lower = str(d).lower()
-                if d_lower == "halal":
+            for d in diet:
+                if d == "halal":
                     dietary_terms.add("halal-friendly")
-                elif d_lower == "vegetarian":
+                elif d == "vegetarian":
                     dietary_terms.add("vegetarian options")
-                elif d_lower == "vegan":
+                elif d == "vegan":
                     dietary_terms.add("vegan-friendly")
-                elif d_lower == "no_raw_fish":
+                elif d == "no_raw_fish":
                     dietary_terms.add("no raw fish")
 
             bmax = c.get("budget_max")
@@ -192,6 +203,14 @@ def build_venue_query(
 
     if location_terms:
         parts.append(f"near {', '.join(sorted(location_terms))}")
+
+    # Mixed group: a vegetarian AND a meat-eater. Asking for "vegetarian options"
+    # alone pulls veg-only restaurants that fail the meat-eaters, so request a
+    # venue that serves both rather than a vegetarian-only place.
+    if has_vegetarian and has_meat_eater:
+        dietary_terms.discard("vegetarian options")
+        dietary_terms.discard("vegan-friendly")
+        dietary_terms.add("serving meat dishes and vegetarian options")
 
     if dietary_terms:
         parts.extend(sorted(dietary_terms))
@@ -559,8 +578,44 @@ def discover_venues(
 # Planning supplement (called by core/session.py for non-ORK sessions)
 # ---------------------------------------------------------------------------
 
+def _venue_fit_score(venue: dict, personas: list) -> int:
+    """How many of the group's real constraints this venue satisfies.
+
+    Mirrors agents/persona.stance so the ranking lines up with how the convener
+    actually evaluates plans: budget, halal, vegetarian, no-raw-fish, and the
+    meat-eater preference (an all-veg venue is penalised for meat eaters).
+    """
+    price = venue.get("price_per_head")
+    name = str(venue.get("name", "")).lower()
+    # Treat a venue as vegetarian-only when its name signals exclusivity (an
+    # all-veg place serves no meat), so meat-eaters are penalised against it.
+    is_veg_only = bool(venue.get("vegetarian")) and any(
+        w in name for w in ("vegan", "vegetarian", "plant-based", "meat-free")
+    )
+    score = 0
+    for p in personas or []:
+        c = p.get("constraints") or {}
+        diet = [str(d).lower() for d in (c.get("dietary") or [])]
+        bmax = c.get("budget_max")
+        if not (isinstance(bmax, (int, float)) and isinstance(price, (int, float)) and price > bmax):
+            score += 1
+        if "halal" in diet and not venue.get("halal"):
+            score -= 1
+        if ("vegetarian" in diet or "vegan" in diet) and not venue.get("vegetarian"):
+            score -= 1
+        if "no_raw_fish" in diet and any(w in name for w in ("sushi", "sashimi", "raw")):
+            score -= 1
+        # Meat-eater (no veg restriction, or asks for meat) vs an all-veg venue.
+        wants_meat = ("meat" in str(p.get("freeform", "")).lower()) or not (
+            "vegetarian" in diet or "vegan" in diet
+        )
+        if wants_meat and is_veg_only:
+            score -= 1
+    return score
+
+
 def exa_venue_supplements(personas: list, limit: int = 3) -> list:
-    """Return Exa-discovered venue dicts for use in planning.
+    """Return Exa-discovered venue dicts for use in planning, best-fit first.
 
     Returns [] if either USE_EXA or USE_EXA_IN_PLANNING is off, or on any failure.
     The caller (compute_plan in session.py) appends these to the seeded venues list.
@@ -571,7 +626,10 @@ def exa_venue_supplements(personas: list, limit: int = 3) -> list:
     try:
         query = build_venue_query(personas=personas)
         result = discover_venues(query=query, limit=limit)
-        return result.get("venues", [])
+        venues = result.get("venues", [])
+        # Order by how well each real venue fits the group so a genuinely-fitting
+        # discovery beats an arbitrary keyword match (e.g. an all-veg place).
+        return sorted(venues, key=lambda v: _venue_fit_score(v, personas), reverse=True)
     except Exception:
         return []
 

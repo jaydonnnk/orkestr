@@ -422,9 +422,14 @@ def _booking_basics(plan: dict) -> dict:
     venue = plan.get("venue") or {}
     plan_time = plan.get("time") or "19:30"
     day = plan.get("day", "FRI")
+    # Party size is the whole group, not just whoever accepted. When a plan wins
+    # on fewest-objections (not unanimous), satisfies is short — but the table
+    # still seats everyone, so count satisfies + conflicts.
     satisfies = plan.get("satisfies") or []
-    party_size = len(satisfies) if isinstance(satisfies, list) else 0
-    party_size = party_size or 5
+    conflicts = plan.get("conflicts") or []
+    n_satisfies = len(satisfies) if isinstance(satisfies, list) else 0
+    n_conflicts = len(conflicts) if isinstance(conflicts, list) else 0
+    party_size = (n_satisfies + n_conflicts) or 5
 
     try:
         hour, minute = [int(part) for part in str(plan_time).split(":", 1)]
@@ -485,7 +490,12 @@ def _fallback_strike_booking(plan: dict, error=None) -> dict:
     }
     response = venue_agent.check_availability(request)
     counter_time = response.get("time_offered") or basics["plan_time"]
-    response = {**response, "counter_time": counter_time}
+    response = {
+        **response,
+        "counter_time": counter_time,
+        "per_head": response.get("per_head") or basics["per_person"],
+        "price_total": response.get("price_total") or basics["total_amount"],
+    }
     cart = {
         "cart_id": "CART-1",
         "items": [{
@@ -586,6 +596,8 @@ def strike_booking(plan: dict) -> dict:
             **session,
             "counter_time": counter_time,
             "time_offered": counter_time,
+            "per_head": basics["per_person"],
+            "price_total": basics["total_amount"],
         }
         mandate = {
             "cart_id": session["id"],
