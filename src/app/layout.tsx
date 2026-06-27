@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Orkestr System Check",
-  description: "ORK-001 ACP and x402 verification console",
+  title: "Orkestr",
+  description: "Five agents negotiate a plan, book it over ACP, and settle on x402.",
 };
 
 export default function RootLayout({

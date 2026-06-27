@@ -53,6 +53,51 @@ def new_session(name=None, date_range=None):
     return SESSIONS[sid]
 
 
+def new_live_session(name=None, date_range=None):
+    """A real (non-seeded) session pre-populated with 5 member *identities* only.
+
+    The group exists from the start (names/avatars), but every constraint is
+    entered live and each member must press find-our-plan before the pipeline
+    runs. Marked live=True so the status gate waits for all 5 (see all_ready).
+    """
+    s = new_session(name or "Live plan", date_range)
+    shells = []
+    for p in _load("personas.json")[:5]:
+        shells.append({
+            "id": p["id"],
+            "name": p.get("name", p["id"]),
+            "avatar": p.get("avatar"),
+            "constraints": {},
+            "freeform": "",
+        })
+    s["members"] = shells
+    s["live"] = True
+    s["ready"] = []
+    return s
+
+
+def mark_ready(sid, person_id):
+    """Record that one member pressed find-our-plan."""
+    if sid not in SESSIONS:
+        raise HTTPException(status_code=404, detail="session not found")
+    if not person_id:
+        raise HTTPException(status_code=400, detail="person_id required")
+    s = SESSIONS[sid]
+    if person_id not in [m["id"] for m in s["members"]]:
+        raise HTTPException(status_code=400, detail="unknown person_id")
+    if person_id not in s.setdefault("ready", []):
+        s["ready"].append(person_id)
+    return s
+
+
+def all_ready(s):
+    """True once every member of a live session has pressed find-our-plan."""
+    member_ids = {m["id"] for m in s.get("members", [])}
+    if not member_ids:
+        return False
+    return member_ids.issubset(set(s.get("ready", [])))
+
+
 def add_constraints(sid, person):
     if sid not in SESSIONS:
         raise HTTPException(status_code=404, detail="session not found")
@@ -95,6 +140,20 @@ def compute_plan(sid):
     }
     if s["phase"] == "negotiating":
         s["phase"] = "plan_ready"
+    # Live sessions have no seeded expenses, so x402 would have nothing to
+    # settle. Treat the venue booking the Convener (first member) struck over
+    # ACP as a fronted expense, split evenly — that's what x402 reimburses.
+    if s.get("live") and not s.get("_booking_expense_added"):
+        members = _members(s)
+        total = (s["plan"] or {}).get("total_cost") or 0
+        if members and total:
+            s["_booking_expense_added"] = True
+            add_expense(sid, {
+                "paid_by": members[0]["id"],
+                "amount": total,
+                "description": f"Venue booking — {s['plan'].get('title', 'dinner')}",
+                "split": "even",
+            })
     return s
 
 

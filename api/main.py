@@ -79,6 +79,32 @@ def session_start(payload: dict = Body(default={})):
             "invite_url": f"https://orkestr.app/join/{s['session_id']}"}
 
 
+@app.post("/api/session/live")
+def session_live(payload: dict = Body(default={})):
+    """Fresh, unseeded session with 5 member identities and empty constraints.
+
+    The frontend renders one card per member; each member enters constraints
+    live and presses find-our-plan. The pipeline runs only once all 5 are ready.
+    """
+    s = S.new_live_session(payload.get("name"), payload.get("date_range"))
+    return {
+        "session_id": s["session_id"],
+        "invite_url": f"https://orkestr.app/join/{s['session_id']}",
+        "members": [{"id": m["id"], "name": m["name"], "avatar": m.get("avatar")}
+                    for m in s["members"]],
+    }
+
+
+@app.post("/api/ready/{sid}")
+def ready(sid: str, body: dict = Body(...)):
+    s = _require_session(sid)
+    _require_field(body, "person_id")
+    S.mark_ready(sid, body["person_id"])
+    return {"ready": s.get("ready", []),
+            "members_total": len(s["members"]),
+            "all_ready": S.all_ready(s)}
+
+
 @app.post("/api/constraints")
 def constraints(person: dict = Body(...)):
     _require_field(person, "session_id")
@@ -92,6 +118,12 @@ def constraints(person: dict = Body(...)):
 def status(sid: str):
     s = _require_session(sid)
     if s["phase"] == "negotiating":
+        # Live sessions wait until all 5 members press find-our-plan; everyone
+        # else (incl. ORK-001) keeps the original lazy-compute behaviour.
+        if s.get("live") and not S.all_ready(s):
+            return {"phase": s["phase"],
+                    "ready": s.get("ready", []),
+                    "members_total": len(s["members"])}
         S.compute_plan(sid)  # lazily produce the plan -> plan_ready
     return {"phase": s["phase"]}
 

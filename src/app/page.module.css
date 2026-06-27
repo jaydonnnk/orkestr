@@ -126,6 +126,80 @@
   margin: 0 auto;
 }
 
+.groupGrid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(220px, 1fr));
+  gap: 16px;
+  max-width: 1320px;
+  margin: 0 auto;
+}
+
+.field {
+  margin-top: 18px;
+}
+
+.fieldLabel {
+  display: block;
+  color: #9a8f83;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  border: 1px solid #d5c8bb;
+  border-radius: 999px;
+  background: #fffdf8;
+  color: #6f5142;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.chip:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.chipOn {
+  background: #c95f3b;
+  border-color: #c95f3b;
+  color: #fffaf3;
+}
+
+.numInput,
+.textInput {
+  width: 100%;
+  border: 1px solid #d5c8bb;
+  border-radius: 8px;
+  background: #fffdf8;
+  color: #25231f;
+  font: inherit;
+  font-size: 16px;
+  padding: 10px 12px;
+}
+
+.numInput:focus,
+.textInput:focus {
+  outline: 2px solid #c95f3b;
+  outline-offset: 0;
+}
+
+.numInput:disabled,
+.textInput:disabled {
+  opacity: 0.7;
+}
+
 .phoneBlock {
   min-width: 0;
 }
@@ -498,6 +572,10 @@
   .phoneGrid {
     grid-template-columns: repeat(2, minmax(260px, 1fr));
   }
+
+  .groupGrid {
+    grid-template-columns: repeat(3, minmax(220px, 1fr));
+  }
 }
 
 @media (max-width: 720px) {
@@ -520,7 +598,8 @@
   }
 
   .checks,
-  .phoneGrid {
+  .phoneGrid,
+  .groupGrid {
     grid-template-columns: 1fr;
   }
 

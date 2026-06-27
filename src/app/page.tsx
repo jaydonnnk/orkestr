@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import styles from "./page.module.css";
 
-const SESSION_ID = "ORK-001";
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 type Dict = Record<string, unknown>;
@@ -83,6 +82,23 @@ type DemoState = {
   checkedAt: string;
 };
 
+type Member = { id: string; name: string; avatar?: string | null };
+
+type Constraints = {
+  days: string[];
+  budget: string;
+  dietary: string[];
+  freeform: string;
+};
+
+const DAY_OPTIONS = ["FRI", "SAT", "SUN"];
+const DIET_OPTIONS: { id: string; label: string }[] = [
+  { id: "halal", label: "halal" },
+  { id: "vegetarian", label: "vegetarian" },
+  { id: "no_raw_fish", label: "no raw fish" },
+  { id: "vegan", label: "vegan" },
+];
+
 const PERSON_NAMES: Record<string, string> = {
   "P-001": "Alice",
   "P-002": "Bob",
@@ -116,20 +132,13 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-async function readDemo(reseed = false): Promise<DemoState> {
-  if (reseed) {
-    await fetchJson<{ ok: boolean }>(`/api/dev/reseed`, {
-      method: "POST",
-      body: "{}",
-    });
-  }
-
+async function readLiveState(sessionId: string): Promise<DemoState> {
   const [status, negotiation, plan, handshake, settlement] = await Promise.all([
-    fetchJson<{ phase?: string }>(`/api/status/${SESSION_ID}`),
-    fetchJson<Message[]>(`/api/negotiation/${SESSION_ID}`),
-    fetchJson<Plan>(`/api/plan/${SESSION_ID}`),
-    fetchJson<Handshake>(`/api/handshake/${SESSION_ID}`),
-    fetchJson<Settlement>(`/api/settlement/${SESSION_ID}`),
+    fetchJson<{ phase?: string }>(`/api/status/${sessionId}`),
+    fetchJson<Message[]>(`/api/negotiation/${sessionId}`),
+    fetchJson<Plan>(`/api/plan/${sessionId}`),
+    fetchJson<Handshake>(`/api/handshake/${sessionId}`),
+    fetchJson<Settlement>(`/api/settlement/${sessionId}`),
   ]);
 
   return {
@@ -188,6 +197,125 @@ function shortHash(hash?: string | null): string {
   }
 
   return hash.length > 10 ? `${hash.slice(0, 6)}...${hash.slice(-4)}` : hash;
+}
+
+function emptyConstraints(): Constraints {
+  return { days: [], budget: "", dietary: [], freeform: "" };
+}
+
+function toggle(list: string[], value: string): string[] {
+  return list.includes(value)
+    ? list.filter((item) => item !== value)
+    : [...list, value];
+}
+
+function isReadyToSubmit(c: Constraints): boolean {
+  return c.days.length > 0 && Number(c.budget) > 0;
+}
+
+function ConstraintCard({
+  member,
+  value,
+  onChange,
+  onSubmit,
+  submitted,
+  submitting,
+}: {
+  member: Member;
+  value: Constraints;
+  onChange: (next: Constraints) => void;
+  onSubmit: () => void;
+  submitted: boolean;
+  submitting: boolean;
+}) {
+  const canSubmit = isReadyToSubmit(value) && !submitted && !submitting;
+
+  return (
+    <div className={styles.phoneBlock}>
+      <div className={styles.stepLabel}>
+        <span>{personInitial(member.id)} — {member.name}</span>
+        {submitted ? <em>ready</em> : null}
+      </div>
+      <div className={styles.phone}>
+        <div className={styles.statusBar}>
+          <span>9:41</span>
+          <span>5G</span>
+        </div>
+        <h2>Your constraints</h2>
+        <p className={styles.subtitle}>What works for you?</p>
+
+        <div className={styles.field}>
+          <span className={styles.fieldLabel}>Available days</span>
+          <div className={styles.chipRow}>
+            {DAY_OPTIONS.map((day) => (
+              <button
+                key={day}
+                type="button"
+                disabled={submitted}
+                className={`${styles.chip} ${value.days.includes(day) ? styles.chipOn : ""}`}
+                onClick={() => onChange({ ...value, days: toggle(value.days, day) })}
+              >
+                {day}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className={styles.field}>
+          <span className={styles.fieldLabel}>Budget / head (SGD)</span>
+          <input
+            className={styles.numInput}
+            type="number"
+            min={0}
+            inputMode="numeric"
+            placeholder="e.g. 60"
+            disabled={submitted}
+            value={value.budget}
+            onChange={(event) => onChange({ ...value, budget: event.target.value })}
+          />
+        </div>
+
+        <div className={styles.field}>
+          <span className={styles.fieldLabel}>Dietary</span>
+          <div className={styles.chipRow}>
+            {DIET_OPTIONS.map((diet) => (
+              <button
+                key={diet.id}
+                type="button"
+                disabled={submitted}
+                className={`${styles.chip} ${value.dietary.includes(diet.id) ? styles.chipOn : ""}`}
+                onClick={() => onChange({ ...value, dietary: toggle(value.dietary, diet.id) })}
+              >
+                {diet.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className={styles.field}>
+          <span className={styles.fieldLabel}>Anything else</span>
+          <input
+            className={styles.textInput}
+            type="text"
+            placeholder="e.g. somewhere walkable"
+            disabled={submitted}
+            value={value.freeform}
+            onChange={(event) => onChange({ ...value, freeform: event.target.value })}
+          />
+        </div>
+
+        <button
+          className={styles.primaryButton}
+          style={{ marginTop: "auto", width: "100%" }}
+          type="button"
+          onClick={onSubmit}
+          disabled={!canSubmit}
+        >
+          {submitted ? "Ready ✓" : submitting ? "Sending..." : "Find our plan"}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function CheckPill({
@@ -398,32 +526,140 @@ function SettlementPhone({
 }
 
 export default function Home() {
+  const [stage, setStage] = useState<"group" | "working">("group");
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [forms, setForms] = useState<Record<string, Constraints>>({});
+  const [submitted, setSubmitted] = useState<Record<string, boolean>>({});
+  const [submitting, setSubmitting] = useState<Record<string, boolean>>({});
+
   const [state, setState] = useState<DemoState | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [working, setWorking] = useState(false);
   const [settling, setSettling] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function runCheck(reseed = false) {
-    setLoading(true);
-    setError(null);
+  // Spin up a fresh, unseeded session with 5 member identities on first load.
+  useEffect(() => {
+    let active = true;
 
+    async function startGroup() {
+      try {
+        const live = await fetchJson<{ session_id: string; members: Member[] }>(
+          `/api/session/live`,
+          { method: "POST", body: "{}" },
+        );
+        if (!active) {
+          return;
+        }
+        setSessionId(live.session_id);
+        setMembers(live.members);
+        setForms(
+          Object.fromEntries(
+            live.members.map((m): [string, Constraints] => [m.id, emptyConstraints()]),
+          ),
+        );
+        setError(null);
+      } catch (err) {
+        if (active) {
+          setError(err instanceof Error ? err.message : "Unable to reach backend");
+        }
+      }
+    }
+
+    void startGroup();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const allReady =
+    members.length > 0 && members.every((m) => submitted[m.id]);
+
+  // Once everyone has pressed find-our-plan, run the live pipeline and load it.
+  const runPipeline = useCallback(
+    async (id: string) => {
+      setWorking(true);
+      setError(null);
+      try {
+        // First status call drives compute_plan server-side (Exa + negotiation
+        // + ACP booking). It blocks until the plan is ready.
+        await fetchJson<{ phase?: string }>(`/api/status/${id}`);
+        setState(await readLiveState(id));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to build the plan");
+      } finally {
+        setWorking(false);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (stage === "group" && allReady && sessionId) {
+      setStage("working");
+      void runPipeline(sessionId);
+    }
+  }, [stage, allReady, sessionId, runPipeline]);
+
+  async function submitMember(member: Member) {
+    if (!sessionId) {
+      return;
+    }
+    const form = forms[member.id];
+    if (!form || !isReadyToSubmit(form)) {
+      return;
+    }
+
+    setSubmitting((prev) => ({ ...prev, [member.id]: true }));
+    setError(null);
     try {
-      setState(await readDemo(reseed));
+      await fetchJson<{ ok: boolean }>(`/api/constraints`, {
+        method: "POST",
+        body: JSON.stringify({
+          session_id: sessionId,
+          id: member.id,
+          name: member.name,
+          constraints: {
+            available_days: form.days,
+            budget_max: Number(form.budget),
+            dietary: form.dietary,
+          },
+          freeform: form.freeform,
+        }),
+      });
+      await fetchJson<{ all_ready: boolean }>(`/api/ready/${sessionId}`, {
+        method: "POST",
+        body: JSON.stringify({ person_id: member.id }),
+      });
+      setSubmitted((prev) => ({ ...prev, [member.id]: true }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to submit constraints");
+    } finally {
+      setSubmitting((prev) => ({ ...prev, [member.id]: false }));
+    }
+  }
+
+  async function loadSeededBackup() {
+    setSessionId("ORK-001");
+    setStage("working");
+    setWorking(true);
+    setError(null);
+    try {
+      setState(await readLiveState("ORK-001"));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to reach backend");
     } finally {
-      setLoading(false);
+      setWorking(false);
     }
   }
 
   async function settleTransfers() {
-    if (!state?.settlement.transfers?.length) {
+    if (!sessionId || !state?.settlement.transfers?.length) {
       return;
     }
 
     setSettling(true);
     setError(null);
-
     try {
       const pendingSenders = Array.from(
         new Set(
@@ -435,48 +671,20 @@ export default function Home() {
 
       await Promise.all(
         pendingSenders.map((person_id) =>
-          fetchJson<{ ok: boolean }>(`/api/settle/${SESSION_ID}`, {
+          fetchJson<{ ok: boolean }>(`/api/settle/${sessionId}`, {
             method: "POST",
             body: JSON.stringify({ person_id }),
           }),
         ),
       );
 
-      setState(await readDemo(false));
+      setState(await readLiveState(sessionId));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to settle transfers");
     } finally {
       setSettling(false);
     }
   }
-
-  useEffect(() => {
-    let active = true;
-
-    async function loadInitial() {
-      try {
-        const nextState = await readDemo(false);
-        if (active) {
-          setState(nextState);
-          setError(null);
-        }
-      } catch (err) {
-        if (active) {
-          setError(err instanceof Error ? err.message : "Unable to reach backend");
-        }
-      } finally {
-        if (active) {
-          setLoading(false);
-        }
-      }
-    }
-
-    void loadInitial();
-
-    return () => {
-      active = false;
-    };
-  }, []);
 
   const checks = useMemo(() => {
     const mandate = state?.handshake.mandate;
@@ -500,47 +708,95 @@ export default function Home() {
     };
   }, [state]);
 
+  const readyCount = members.filter((m) => submitted[m.id]).length;
+
   return (
     <main className={styles.shell}>
       <section className={styles.hero}>
         <div>
-          <p className={styles.eyebrow}>Orkestr demo console</p>
-          <h1>System check for {SESSION_ID}</h1>
+          <p className={styles.eyebrow}>Orkestr — live</p>
+          <h1>{stage === "group" ? "The squad sets the rules" : "The plan makes itself"}</h1>
           <p>
-            Backend: <code>{API_BASE}</code>
+            {stage === "group"
+              ? `Session ${sessionId ?? "..."} - each member enters constraints, then taps Find our plan`
+              : `Session ${sessionId ?? "..."} - Backend: `}
+            {stage === "working" ? <code>{API_BASE}</code> : null}
           </p>
         </div>
         <div className={styles.actions}>
-          <button className={styles.secondaryButton} type="button" onClick={() => void runCheck(true)}>
-            Reseed ORK-001
-          </button>
-          <button className={styles.primaryButton} type="button" onClick={() => void runCheck(false)}>
-            Run check
-          </button>
+          {stage === "group" ? (
+            <>
+              <span className={styles.eyebrow}>{readyCount} / {members.length || 5} ready</span>
+              <button
+                className={styles.secondaryButton}
+                type="button"
+                onClick={() => void loadSeededBackup()}
+              >
+                Use seeded demo (ORK-001)
+              </button>
+            </>
+          ) : null}
         </div>
       </section>
 
-      <section className={styles.checks} aria-label="System checks">
-        <CheckPill label="Plan" ok={checks.plan} detail={state?.phase ?? "loading"} />
-        <CheckPill label="ACP" ok={checks.acp && checks.counter && checks.payment} detail={paymentMode(state?.handshake.mandate)} />
-        <CheckPill label="x402" ok={checks.x402} detail={checks.x402 ? "settled" : "pending"} />
-      </section>
-
       {error ? <p className={styles.error}>Backend check failed: {error}</p> : null}
-      {loading && !state ? <p className={styles.loading}>Loading ORK-001...</p> : null}
 
-      {state ? (
-        <section className={styles.phoneGrid}>
-          <NegotiationPhone messages={state.negotiation} plan={state.plan} />
-          <PlanPhone plan={state.plan} />
-          <AcpPhone handshake={state.handshake} />
-          <SettlementPhone settlement={state.settlement} onSettle={() => void settleTransfers()} settling={settling} />
+      {stage === "group" ? (
+        <section className={styles.groupGrid} aria-label="Group constraints">
+          {members.length === 0 ? (
+            <p className={styles.loading}>Assembling the group...</p>
+          ) : (
+            members.map((member) => (
+              <ConstraintCard
+                key={member.id}
+                member={member}
+                value={forms[member.id] ?? emptyConstraints()}
+                onChange={(next) => setForms((prev) => ({ ...prev, [member.id]: next }))}
+                onSubmit={() => void submitMember(member)}
+                submitted={Boolean(submitted[member.id])}
+                submitting={Boolean(submitting[member.id])}
+              />
+            ))
+          )}
         </section>
       ) : null}
 
-      <footer className={styles.footer}>
-        Last checked {state?.checkedAt ?? "--"} - ACP and x402 are read from the live API.
-      </footer>
+      {stage === "working" ? (
+        <>
+          <section className={styles.checks} aria-label="System checks">
+            <CheckPill label="Plan" ok={checks.plan} detail={state?.phase ?? "loading"} />
+            <CheckPill
+              label="ACP"
+              ok={checks.acp && checks.counter && checks.payment}
+              detail={paymentMode(state?.handshake.mandate)}
+            />
+            <CheckPill label="x402" ok={checks.x402} detail={checks.x402 ? "settled" : "pending"} />
+          </section>
+
+          {working && !state ? (
+            <p className={styles.loading}>
+              Agents negotiating, discovering venues, and striking the booking...
+            </p>
+          ) : null}
+
+          {state ? (
+            <section className={styles.phoneGrid}>
+              <NegotiationPhone messages={state.negotiation} plan={state.plan} />
+              <PlanPhone plan={state.plan} />
+              <AcpPhone handshake={state.handshake} />
+              <SettlementPhone
+                settlement={state.settlement}
+                onSettle={() => void settleTransfers()}
+                settling={settling}
+              />
+            </section>
+          ) : null}
+
+          <footer className={styles.footer}>
+            Last checked {state?.checkedAt ?? "--"} - ACP and x402 are read from the live API.
+          </footer>
+        </>
+      ) : null}
     </main>
   );
 }
