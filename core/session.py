@@ -13,7 +13,7 @@ import uuid
 from fastapi import HTTPException
 
 from agents.convener import (generate_candidates, run_negotiation, strike_booking,
-                             _seeded_plan, _seeded_messages)
+                             _seeded_messages)
 from core.settlement import compute_net, simplify
 from payments.x402 import stamp
 
@@ -70,6 +70,16 @@ def compute_plan(sid):
     s = SESSIONS[sid]
     members = _members(s)
     venues = _load("venues.json")
+    # Exa planning supplement: only for non-ORK sessions when both flags are on.
+    # Any Exa failure silently falls back to seeded venues only.
+    if sid != "ORK-001":
+        try:
+            from agents.discovery import exa_venue_supplements
+            extra = exa_venue_supplements(members, limit=3)
+            if extra:
+                venues = venues + extra
+        except Exception:
+            pass
     candidates = generate_candidates(members, venues)
     neg = run_negotiation(candidates, members)
     s["negotiation"] = neg["messages"]
@@ -183,10 +193,31 @@ def seed_demo():
         "settlement": None,
     }
     compute_plan("ORK-001")
-    # Pin ORK-001 to frozen demo values; real negotiation may not converge
-    # to the demo-perfect story (Bob's budget_max < Seoul Garden per_person).
+    # Pin ORK-001 to frozen demo values.
+    # per_person=80 = total expenses (240+100+60=400) / 5 people.
+    # _seeded_plan() in convener.py is not used here because its values
+    # can change as the agent layer evolves; these numbers are contractually frozen.
     s = SESSIONS["ORK-001"]
-    seeded_plan = _seeded_plan(s["members"])
+    seeded_plan = {
+        "plan_id": "PLAN-1",
+        "title": "Korean BBQ + arcade",
+        "day": "FRI",
+        "time": "19:30",
+        "venue": {
+            "name": "Seoul Garden",
+            "address": "VivoCity #03-01",
+            "lat": 1.3010,
+            "lng": 103.8480,
+            "tags": ["halal", "vegetarian"],
+        },
+        "activity": {"name": "Timezone @ VivoCity", "lat": 1.2643, "lng": 103.8222},
+        "total_cost": 400,
+        "per_person": 80,
+        "booking_ref": "SG-2026-0627-77",
+        "mandate_status": "co-signed",
+        "satisfies": [p["id"] for p in s["members"] if isinstance(p, dict)],
+        "conflicts": [],
+    }
     booking = strike_booking(seeded_plan)
     s["negotiation"] = _seeded_messages()
     s["plan"] = seeded_plan

@@ -193,6 +193,28 @@ def settle_ep(sid: str, body: dict = Body(default={})):
     return {"ok": True}
 
 
+@app.post("/api/discovery/venues")
+def discovery_venues(body: dict = Body(default={})):
+    """Exa venue discovery preview — never mutates sessions, never affects ORK-001."""
+    from agents import discovery as D
+
+    raw_limit = body.get("limit", 5)
+    if raw_limit is not None:
+        if not isinstance(raw_limit, (int, float)) or isinstance(raw_limit, bool):
+            raise HTTPException(status_code=400, detail="limit must be numeric")
+        if raw_limit <= 0:
+            raise HTTPException(status_code=400, detail="limit must be > 0")
+
+    query = body.get("query") or None
+    constraints = body.get("constraints") or None
+    limit = min(int(raw_limit), 10)
+
+    if not query and not constraints:
+        query = "Singapore group dinner venue restaurant halal vegetarian options"
+
+    return D.discover_venues(query=query, constraints=constraints, limit=limit)
+
+
 @app.post("/api/dev/reseed")
 def dev_reseed():
     S.SESSIONS.pop("ORK-001", None)
