@@ -260,6 +260,8 @@ _NON_RESTAURANT_TERMS = (
     "party hall", "banquet hall rental", "caterer", "catering service",
     "real estate", "for rent", "for lease", "hotel booking", "airbnb",
     "things to do", "best restaurants", "top 10", "guide to", "listicle",
+    "host your", "private party", "party package", "book your event",
+    "celebrate your", "venue hire", "event planning", "birthday package",
 )
 
 

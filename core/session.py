@@ -129,6 +129,22 @@ def compute_plan(sid):
     neg = run_negotiation(candidates, members)
     s["negotiation"] = neg["messages"]
     s["plan"] = neg["plan"]
+    # Quorum: fewer than half the agents could agree (budget / availability /
+    # dietary). Don't strike a booking — fail and let the frontend alert the group.
+    accepts = len((s["plan"] or {}).get("satisfies") or [])
+    needed = (len(members) + 1) // 2
+    if neg.get("quorum") is False:
+        s["handshake"] = None
+        s["booking_failed"] = True
+        s["fail_reason"] = (
+            f"Only {accepts} of {len(members)} could agree (need {needed}). "
+            "No venue fits enough of the group's budget, dates, and dietary needs."
+        )
+        s["phase"] = "failed"
+        return s
+
+    s["booking_failed"] = False
+    s["fail_reason"] = None
     # allow_x402 only for live sessions; ORK-001's seed_demo keeps the default
     # allow_x402=False, so the frozen demo never attempts a real x402 payment.
     booking = strike_booking(s["plan"], allow_x402=bool(s.get("live")))
@@ -140,7 +156,7 @@ def compute_plan(sid):
         "status": booking["mandate"]["status"],
         "merchant": booking["mandate"]["merchant"],
     }
-    if s["phase"] == "negotiating":
+    if s["phase"] in ("negotiating", "failed"):
         s["phase"] = "plan_ready"
     # Live sessions have no seeded expenses, so x402 would have nothing to
     # settle. Treat the venue booking the Convener (first member) struck over

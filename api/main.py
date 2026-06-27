@@ -142,6 +142,8 @@ def status(sid: str):
                     "ready": s.get("ready", []),
                     "members_total": len(s["members"])}
         S.compute_plan(sid)  # lazily produce the plan -> plan_ready
+    if s["phase"] == "failed":
+        return {"phase": "failed", "booking_failed": True, "fail_reason": s.get("fail_reason")}
     return {"phase": s["phase"]}
 
 

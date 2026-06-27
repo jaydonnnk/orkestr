@@ -323,6 +323,26 @@ def _best_group_day(personas: list):
     return max(counts, key=rank)
 
 
+def _affordable_by_half(candidate: dict, personas: list) -> bool:
+    """True if at least half the group can afford this venue's per-head price.
+
+    A person with no budget set is treated as able to afford. Used as a hard
+    filter so an over-budget venue never wins on a tie and a lone low-budget
+    outlier can't force the cheapest place.
+    """
+    n = len(personas) or 1
+    try:
+        price = float(candidate.get("per_person") or 0)
+    except (TypeError, ValueError):
+        price = 0.0
+    afford = 0
+    for persona in personas:
+        bmax = (persona.get("constraints") or {}).get("budget_max")
+        if bmax is None or price <= bmax:
+            afford += 1
+    return afford * 2 >= n
+
+
 def _apply_group_day(candidates: list, personas: list) -> list:
     """Override each candidate's day with the group's best-overlap day."""
     best_day = _best_group_day(personas)
@@ -429,20 +449,20 @@ def run_negotiation(candidates: list, personas: list) -> dict:
     if not candidates or not personas:
         return _seeded_negotiation(personas)
 
-    def _cost(plan):
-        try:
-            return float(plan.get("per_person") or 0)
-        except (TypeError, ValueError):
-            return 0.0
+    n = len(personas)
+    quorum_needed = (n + 1) // 2  # at least half must accept; fewer than half fails
+
+    # Hard budget filter: a venue only competes if at least half the group can
+    # actually afford it, so a single low-budget outlier can't drag everyone to
+    # the cheapest place, and wildly over-budget venues never win.
+    affordable = [c for c in candidates if isinstance(c, dict) and _affordable_by_half(c, personas)]
+    pool = affordable if affordable else [c for c in candidates if isinstance(c, dict)]
 
     messages = []
     best_plan = None
     best_objection_count = None
-    best_cost = None
 
-    for round_no, candidate in enumerate(candidates, start=1):
-        if not isinstance(candidate, dict):
-            continue
+    for round_no, candidate in enumerate(pool, start=1):
         messages.append(_proposal(candidate, personas, round_no))
         evaluations = [stance(persona, candidate, round_no) for persona in personas]
         messages.extend(evaluations)
@@ -450,25 +470,19 @@ def run_negotiation(candidates: list, personas: list) -> dict:
         objections = [msg for msg in evaluations if msg["stance"] == "object"]
 
         if not objections:
-            return {"plan": plan, "messages": messages}
+            return {"plan": plan, "messages": messages, "quorum": True}
 
         objection_count = len(objections)
-        cost = _cost(candidate)
-        # Prefer fewest objections; break ties by the cheapest venue so a group
-        # that's over budget on every option still lands on the least-expensive.
-        better = (
-            best_plan is None
-            or objection_count < best_objection_count
-            or (objection_count == best_objection_count and cost < best_cost)
-        )
-        if better:
+        if best_objection_count is None or objection_count <= best_objection_count:
             best_plan = plan
             best_objection_count = objection_count
-            best_cost = cost
 
     if best_plan is None:
         return _seeded_negotiation(personas)
-    return {"plan": best_plan, "messages": messages}
+
+    accepts = len(best_plan.get("satisfies") or [])
+    quorum = accepts >= quorum_needed and bool(affordable)
+    return {"plan": best_plan, "messages": messages, "quorum": quorum}
 
 
 def _booking_basics(plan: dict) -> dict:

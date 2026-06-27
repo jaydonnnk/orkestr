@@ -549,6 +549,7 @@ export default function Home() {
   const [working, setWorking] = useState(false);
   const [settling, setSettling] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [failReason, setFailReason] = useState<string | null>(null);
 
   // Spin up a fresh, unseeded session with 5 member identities on first load.
   useEffect(() => {
@@ -592,10 +593,20 @@ export default function Home() {
     async (id: string) => {
       setWorking(true);
       setError(null);
+      setFailReason(null);
       try {
         // First status call drives compute_plan server-side (Exa + negotiation
         // + ACP booking). It blocks until the plan is ready.
-        await fetchJson<{ phase?: string }>(`/api/status/${id}`);
+        const status = await fetchJson<{
+          phase?: string;
+          booking_failed?: boolean;
+          fail_reason?: string;
+        }>(`/api/status/${id}`);
+        if (status.phase === "failed" || status.booking_failed) {
+          // Fewer than half the group could agree — no booking struck.
+          setFailReason(status.fail_reason ?? "Fewer than half the group could agree on a plan.");
+          return;
+        }
         setState(await readLiveState(id));
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unable to build the plan");
@@ -727,6 +738,42 @@ export default function Home() {
           ) : null}
         </div>
       </section>
+
+      {failReason ? (
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          aria-label="Booking failed"
+          style={{
+            position: "fixed", inset: 0, zIndex: 50,
+            background: "rgba(20,16,12,0.55)",
+            display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
+          }}
+          onClick={() => setFailReason(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "#fdf8f1", color: "#2a211a", maxWidth: 420, width: "100%",
+              borderRadius: 16, padding: "28px 26px", boxShadow: "0 20px 60px rgba(0,0,0,0.35)",
+            }}
+          >
+            <h2 style={{ margin: "0 0 8px", fontSize: 22 }}>⚠️ Couldn&apos;t book a plan</h2>
+            <p style={{ margin: "0 0 20px", lineHeight: 1.5, color: "#5c5046" }}>{failReason}</p>
+            <button
+              type="button"
+              className={styles.primaryButton}
+              onClick={() => {
+                setFailReason(null);
+                setSubmitted({});
+                setStage("group");
+              }}
+            >
+              Adjust constraints &amp; retry
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {error ? <p className={styles.error}>Backend check failed: {error}</p> : null}
 
