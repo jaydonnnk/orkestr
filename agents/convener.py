@@ -1,5 +1,12 @@
 """Convener agent: orchestrates candidate plans, negotiation, and booking."""
 
+import json
+import os
+import sys
+
+if __package__ in (None, ""):
+    sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
 from agents import venue as venue_agent
 from agents.persona import stance
 from payments.mandate import cosign
@@ -171,24 +178,30 @@ def generate_candidates(personas: list, venues: list) -> list:
 
 
 def run_negotiation(candidates: list, personas: list) -> dict:
-    """Run real constraint rounds, falling back to the demo-perfect seed.
-
-    The fallback matters because the current demo data intentionally favors a
-    polished story even when strict constraints do not all converge.
-    """
+    """Run real constraint rounds and return the best truthful result."""
     if not candidates or not personas:
         return _seeded_negotiation(personas)
 
     messages = []
+    best_plan = None
+    best_objection_count = None
+
     for round_no, candidate in enumerate(candidates, start=1):
         messages.append(_proposal(candidate, personas, round_no))
         evaluations = [stance(persona, candidate, round_no) for persona in personas]
         messages.extend(evaluations)
         plan = _annotate_plan(candidate, evaluations)
-        if all(msg["stance"] == "accept" for msg in evaluations):
+        objections = [msg for msg in evaluations if msg["stance"] == "object"]
+
+        if not objections:
             return {"plan": plan, "messages": messages}
 
-    return _seeded_negotiation(personas)
+        objection_count = len(objections)
+        if best_objection_count is None or objection_count <= best_objection_count:
+            best_plan = plan
+            best_objection_count = objection_count
+
+    return {"plan": best_plan, "messages": messages}
 
 
 def strike_booking(plan: dict) -> dict:
@@ -208,3 +221,18 @@ def strike_booking(plan: dict) -> dict:
     }
     mandate = cosign(cart, plan["venue"]["name"])
     return {"request": request, "response": response, "mandate": mandate}
+
+
+if __name__ == "__main__":
+    data_dir = os.path.join(os.path.dirname(__file__), "..", "data")
+    with open(os.path.join(data_dir, "personas.json")) as f:
+        personas = json.load(f)
+    with open(os.path.join(data_dir, "venues.json")) as f:
+        venues = json.load(f)
+
+    result = run_negotiation(generate_candidates(personas, venues), personas)
+    print("title", result["plan"]["title"])
+    print("msgs", len(result["messages"]))
+    print("satisfies", result["plan"]["satisfies"])
+    print("conflicts", result["plan"].get("conflicts"))
+    print("NOTE ask the data owner to change Bob budget_max from 40 to 50 for unanimous Seoul convergence.")
