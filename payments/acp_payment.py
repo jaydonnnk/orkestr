@@ -64,6 +64,7 @@ def delegate_payment(allowance, card=None) -> dict:
             amount=_minor_units(allowance.get("max_amount")),
             currency=str(allowance.get("currency", "SGD")).lower(),
             payment_method=payment_method,
+            payment_method_types=["card"],
             confirm=True,
             capture_method="manual",
             metadata={

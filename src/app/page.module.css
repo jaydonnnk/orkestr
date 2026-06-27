@@ -1,142 +1,531 @@
-.page {
-  --background: #fafafa;
-  --foreground: #fff;
-
-  --text-primary: #000;
-  --text-secondary: #666;
-
-  --button-primary-hover: #383838;
-  --button-secondary-hover: #f2f2f2;
-  --button-secondary-border: #ebebeb;
-
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--font-geist-sans);
-  background-color: var(--background);
+.shell {
+  min-height: 100vh;
+  background: #20211d;
+  color: #f8f1e8;
+  padding: 32px;
 }
 
-.main {
+.hero {
   display: flex;
-  flex: 1;
-  width: 100%;
-  max-width: 800px;
-  flex-direction: column;
-  align-items: flex-start;
+  align-items: flex-end;
   justify-content: space-between;
-  background-color: var(--foreground);
-  padding: 120px 60px;
+  gap: 24px;
+  max-width: 1180px;
+  margin: 0 auto 22px;
 }
 
-.intro {
+.hero h1 {
+  margin: 4px 0 8px;
+  font-size: clamp(32px, 5vw, 58px);
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.hero p {
+  color: #cbc0b4;
+  font-size: 15px;
+}
+
+.hero code {
+  color: #f8f1e8;
+}
+
+.eyebrow {
+  color: #d36a43;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.primaryButton,
+.secondaryButton {
+  min-height: 46px;
+  border-radius: 8px;
+  padding: 0 18px;
+  border: 1px solid transparent;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.primaryButton {
+  background: #c95f3b;
+  color: #fffaf3;
+}
+
+.secondaryButton {
+  background: transparent;
+  color: #f8f1e8;
+  border-color: #695e53;
+}
+
+.primaryButton:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.checks {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  max-width: 1180px;
+  margin: 0 auto 24px;
+}
+
+.checkPill {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  border: 1px solid #433c35;
+  border-radius: 8px;
+  background: #2b2b26;
+  padding: 10px 12px;
+}
+
+.checkPill span {
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.checkPill strong {
+  font-size: 15px;
+}
+
+.checkPill small {
+  color: #b8ada1;
+  text-align: right;
+}
+
+.checkOk span {
+  background: #e5f1dc;
+  color: #3d643f;
+}
+
+.checkWait span {
+  background: #fff1d2;
+  color: #8a5a1e;
+}
+
+.phoneGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(250px, 1fr));
+  gap: 18px;
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+.phoneBlock {
+  min-width: 0;
+}
+
+.stepLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  color: #cbc0b4;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.stepLabel em {
+  border: 1px solid #5e4a40;
+  border-radius: 999px;
+  color: #d36a43;
+  font-size: 12px;
+  font-style: normal;
+  padding: 2px 8px;
+}
+
+.phone {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  text-align: left;
-  gap: 24px;
+  min-height: 640px;
+  border: 8px solid #11120f;
+  border-radius: 34px;
+  background: #f7f1e9;
+  color: #25231f;
+  padding: 20px;
+  box-shadow: 0 18px 35px rgb(0 0 0 / 28%);
 }
 
-.intro h1 {
-  max-width: 320px;
-  font-size: 40px;
-  font-weight: 600;
-  line-height: 48px;
-  letter-spacing: -2.4px;
-  text-wrap: balance;
-  color: var(--text-primary);
+.statusBar {
+  display: flex;
+  justify-content: space-between;
+  color: #686159;
+  font-size: 13px;
+  margin-bottom: 26px;
 }
 
-.intro p {
-  max-width: 440px;
+.phone h2 {
+  margin: 0;
+  font-size: 27px;
+  line-height: 1.08;
+  letter-spacing: 0;
+}
+
+.subtitle {
+  color: #716961;
   font-size: 18px;
-  line-height: 32px;
-  text-wrap: balance;
-  color: var(--text-secondary);
+  margin-top: 4px;
 }
 
-.intro a {
-  font-weight: 500;
-  color: var(--text-primary);
+.mapGrid {
+  height: 148px;
+  border: 1px solid #e0d8cc;
+  border-radius: 8px;
+  margin: 22px 0 18px;
+  background-color: #f1eadf;
+  background-image:
+    linear-gradient(#ded6cb 1px, transparent 1px),
+    linear-gradient(90deg, #ded6cb 1px, transparent 1px);
+  background-size: 34px 34px;
 }
 
-.ctas {
+.venuePanel,
+.mandatePanel {
+  border: 1px solid #e4dbcf;
+  border-radius: 8px;
+  background: #fffdf8;
+  padding: 14px;
+}
+
+.venuePanel strong,
+.mandatePanel strong {
+  display: block;
+  font-size: 20px;
+}
+
+.venuePanel span,
+.mandatePanel span {
+  color: #83786e;
+}
+
+.tags {
   display: flex;
-  flex-direction: row;
-  width: 100%;
-  max-width: 440px;
-  gap: 16px;
-  font-size: 14px;
-}
-
-.ctas a {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 40px;
-  padding: 0 16px;
-  border-radius: 128px;
-  border: 1px solid transparent;
-  transition: 0.2s;
-  cursor: pointer;
-  width: fit-content;
-  font-weight: 500;
-}
-
-a.primary {
-  background: var(--text-primary);
-  color: var(--background);
+  flex-wrap: wrap;
   gap: 8px;
+  margin-top: 14px;
 }
 
-a.secondary {
-  border-color: var(--button-secondary-border);
+.tags span {
+  border: 1px solid #d5c8bb;
+  border-radius: 999px;
+  color: #6f5142;
+  font-size: 13px;
+  padding: 5px 10px;
 }
 
-/* Enable hover only on non-touch devices */
-@media (hover: hover) and (pointer: fine) {
-  a.primary:hover {
-    background: var(--button-primary-hover);
-    border-color: transparent;
-  }
+.priceRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 28px;
+  color: #72685f;
+  font-size: 18px;
+}
 
-  a.secondary:hover {
-    background: var(--button-secondary-hover);
-    border-color: transparent;
+.priceRow strong {
+  color: #80572b;
+  font-size: 26px;
+}
+
+.acceptance {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 24px;
+  border-top: 1px solid #e3dacf;
+  padding-top: 14px;
+  color: #6f655c;
+}
+
+.ring {
+  position: relative;
+  width: 220px;
+  height: 220px;
+  border: 1px dashed #d8c2ad;
+  border-radius: 50%;
+  margin: 34px auto 28px;
+}
+
+.ring strong {
+  position: absolute;
+  inset: 74px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #c95f3b;
+  border-radius: 50%;
+  color: #7b422b;
+  font-size: 22px;
+}
+
+.agentDot {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  font-weight: 900;
+}
+
+.dotA {
+  top: -19px;
+  left: 90px;
+  background: #f3ded7;
+  color: #a54731;
+}
+
+.dotB {
+  top: 72px;
+  right: -18px;
+  background: #fff0c9;
+  color: #8a641f;
+}
+
+.dotC {
+  right: 20px;
+  bottom: 3px;
+  background: #edf0e3;
+  color: #4b5d48;
+}
+
+.dotD {
+  bottom: 3px;
+  left: 20px;
+  background: #f5dfe5;
+  color: #944d67;
+}
+
+.dotE {
+  top: 72px;
+  left: -18px;
+  background: #ece8d6;
+  color: #56503d;
+}
+
+.messageList,
+.transferList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.messageList {
+  display: grid;
+  gap: 10px;
+}
+
+.messageList li {
+  display: grid;
+  grid-template-columns: 58px 1fr;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.messageList span {
+  color: #8c563a;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.messageList span[data-stance="accept"] {
+  color: #4f7a4f;
+}
+
+.messageList p {
+  min-width: 0;
+  color: #342f2a;
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.microcopy {
+  margin-top: auto;
+  color: #71685f;
+  font-size: 13px;
+}
+
+.exchange {
+  display: grid;
+  gap: 14px;
+  margin-top: 28px;
+}
+
+.buyerBubble,
+.merchantBubble {
+  display: grid;
+  gap: 3px;
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.buyerBubble {
+  justify-self: start;
+  background: #fae9e5;
+  color: #6b4338;
+}
+
+.merchantBubble {
+  justify-self: end;
+  background: #fff0c9;
+  color: #674b1b;
+  text-align: right;
+}
+
+.buyerBubble span,
+.merchantBubble span {
+  color: #6f655c;
+}
+
+.mandatePanel {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 28px;
+}
+
+.lockIcon {
+  display: grid;
+  place-items: center;
+  width: 50px;
+  height: 34px;
+  border: 1px solid #ad8254;
+  border-radius: 8px;
+  color: #7b572e;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.bookingRef {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 18px;
+  margin-top: 36px;
+}
+
+.bookingRef span {
+  color: #9a8f83;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.bookingRef strong {
+  color: #7b572e;
+  font-size: 20px;
+}
+
+.transferList {
+  display: grid;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.transferList li {
+  display: grid;
+  grid-template-columns: 28px minmax(52px, 1fr) auto 28px minmax(52px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  border-bottom: 1px solid #e4dbcf;
+  padding-bottom: 12px;
+}
+
+.transferList b {
+  color: #75522c;
+}
+
+.transferList code {
+  grid-column: 2 / -1;
+  color: #81786f;
+  font-size: 12px;
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #f2ded9;
+  color: #9f4c35;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.transferList + .primaryButton {
+  margin-top: auto;
+  width: 100%;
+}
+
+.error,
+.loading,
+.footer {
+  max-width: 1180px;
+  margin: 14px auto;
+}
+
+.error {
+  border: 1px solid #874439;
+  border-radius: 8px;
+  background: #3a2521;
+  color: #ffd7cf;
+  padding: 12px;
+}
+
+.loading,
+.footer {
+  color: #cbc0b4;
+}
+
+@media (max-width: 1100px) {
+  .phoneGrid {
+    grid-template-columns: repeat(2, minmax(260px, 1fr));
   }
 }
 
-@media (max-width: 600px) {
-  .main {
-    padding: 48px 24px;
+@media (max-width: 720px) {
+  .shell {
+    padding: 18px;
   }
 
-  .intro {
-    gap: 16px;
+  .hero {
+    align-items: stretch;
+    flex-direction: column;
   }
 
-  .intro h1 {
-    font-size: 32px;
-    line-height: 40px;
-    letter-spacing: -1.92px;
-  }
-}
-
-@media (prefers-color-scheme: dark) {
-  .logo {
-    filter: invert();
+  .actions {
+    justify-content: stretch;
   }
 
-  .page {
-    --background: #000;
-    --foreground: #000;
+  .primaryButton,
+  .secondaryButton {
+    flex: 1;
+  }
 
-    --text-primary: #ededed;
-    --text-secondary: #999;
+  .checks,
+  .phoneGrid {
+    grid-template-columns: 1fr;
+  }
 
-    --button-primary-hover: #ccc;
-    --button-secondary-hover: #1a1a1a;
-    --button-secondary-border: #1a1a1a;
+  .phone {
+    min-height: 560px;
+    border-radius: 28px;
   }
 }
