@@ -105,6 +105,15 @@ def add_constraints(sid, person):
         raise HTTPException(status_code=400, detail="id required")
     s = SESSIONS[sid]
     s["members"] = [m for m in s["members"] if m["id"] != person.get("id")] + [person]
+    # New constraints invalidate any prior failure so an "Adjust constraints &
+    # retry" actually recomputes. Without this the phase stays "failed" and
+    # /api/status returns the stale fail_reason no matter what changed.
+    if s.get("phase") == "failed":
+        s["phase"] = "negotiating"
+        s["booking_failed"] = False
+        s["fail_reason"] = None
+        s["plan"] = None
+        s["negotiation"] = None
     return s
 
 

@@ -218,17 +218,24 @@ function ConstraintCard({
   value,
   onChange,
   onSubmit,
+  onUnready,
   submitted,
   submitting,
+  readyCount,
+  totalMembers,
 }: {
   member: Member;
   value: Constraints;
   onChange: (next: Constraints) => void;
   onSubmit: () => void;
+  onUnready: () => void;
   submitted: boolean;
   submitting: boolean;
+  readyCount: number;
+  totalMembers: number;
 }) {
-  const canSubmit = isReadyToSubmit(value) && !submitted && !submitting;
+  const canSubmit = isReadyToSubmit(value) && !submitting;
+  const isDisabled = submitting || (!submitted && !canSubmit);
 
   return (
     <div className={styles.phoneBlock}>
@@ -241,7 +248,7 @@ function ConstraintCard({
           <span>9:41</span>
           <span>5G</span>
         </div>
-        <h2>Your constraints</h2>
+        <h2>Your Preferences</h2>
         <p className={styles.subtitle}>What works for you?</p>
 
         <div className={styles.field}>
@@ -276,7 +283,7 @@ function ConstraintCard({
         </div>
 
         <div className={styles.field}>
-          <span className={styles.fieldLabel}>Dietary</span>
+          <span className={styles.fieldLabel}>Dietary Restrictions</span>
           <div className={styles.chipRow}>
             {DIET_OPTIONS.map((diet) => (
               <button
@@ -306,12 +313,19 @@ function ConstraintCard({
 
         <button
           className={styles.primaryButton}
-          style={{ marginTop: "auto", width: "100%" }}
+          style={{ marginTop: "24px", width: "100%" }}
           type="button"
-          onClick={onSubmit}
-          disabled={!canSubmit}
+          onClick={submitted ? onUnready : onSubmit}
+          disabled={isDisabled}
         >
-          {submitted ? "Ready ✓" : submitting ? "Sending..." : "Find our plan"}
+          <span>
+            {submitting
+              ? submitted ? "Updating..." : "Sending..."
+              : submitted ? "Ready ✓ — tap to edit" : "Find our plan"}
+          </span>
+          <span className={styles.readySub}>
+            {readyCount} of {totalMembers} ready
+          </span>
         </button>
       </div>
     </div>
@@ -549,7 +563,6 @@ export default function Home() {
   const [working, setWorking] = useState(false);
   const [settling, setSettling] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [failReason, setFailReason] = useState<string | null>(null);
 
   // Spin up a fresh, unseeded session with 5 member identities on first load.
   useEffect(() => {
@@ -593,20 +606,10 @@ export default function Home() {
     async (id: string) => {
       setWorking(true);
       setError(null);
-      setFailReason(null);
       try {
         // First status call drives compute_plan server-side (Exa + negotiation
         // + ACP booking). It blocks until the plan is ready.
-        const status = await fetchJson<{
-          phase?: string;
-          booking_failed?: boolean;
-          fail_reason?: string;
-        }>(`/api/status/${id}`);
-        if (status.phase === "failed" || status.booking_failed) {
-          // Fewer than half the group could agree — no booking struck.
-          setFailReason(status.fail_reason ?? "Fewer than half the group could agree on a plan.");
-          return;
-        }
+        await fetchJson<{ phase?: string }>(`/api/status/${id}`);
         setState(await readLiveState(id));
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unable to build the plan");
@@ -659,6 +662,40 @@ export default function Home() {
       setError(err instanceof Error ? err.message : "Unable to submit constraints");
     } finally {
       setSubmitting((prev) => ({ ...prev, [member.id]: false }));
+    }
+  }
+
+  async function unreadyMember(member: Member) {
+    if (!sessionId) {
+      return;
+    }
+
+    setSubmitting((prev) => ({ ...prev, [member.id]: true }));
+    setError(null);
+    try {
+      await fetchJson<{ all_ready: boolean }>(`/api/unready/${sessionId}`, {
+        method: "POST",
+        body: JSON.stringify({ person_id: member.id }),
+      });
+      setSubmitted((prev) => ({ ...prev, [member.id]: false }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to unready");
+    } finally {
+      setSubmitting((prev) => ({ ...prev, [member.id]: false }));
+    }
+  }
+
+  async function loadSeededBackup() {
+    setSessionId("ORK-001");
+    setStage("working");
+    setWorking(true);
+    setError(null);
+    try {
+      setState(await readLiveState("ORK-001"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to reach backend");
+    } finally {
+      setWorking(false);
     }
   }
 
@@ -739,43 +776,23 @@ export default function Home() {
         </div>
       </section>
 
-      {failReason ? (
-        <div
-          role="alertdialog"
-          aria-modal="true"
-          aria-label="Booking failed"
-          style={{
-            position: "fixed", inset: 0, zIndex: 50,
-            background: "rgba(20,16,12,0.55)",
-            display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
-          }}
-          onClick={() => setFailReason(null)}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: "#fdf8f1", color: "#2a211a", maxWidth: 420, width: "100%",
-              borderRadius: 16, padding: "28px 26px", boxShadow: "0 20px 60px rgba(0,0,0,0.35)",
-            }}
-          >
-            <h2 style={{ margin: "0 0 8px", fontSize: 22 }}>⚠️ Couldn&apos;t book a plan</h2>
-            <p style={{ margin: "0 0 20px", lineHeight: 1.5, color: "#5c5046" }}>{failReason}</p>
-            <button
-              type="button"
-              className={styles.primaryButton}
-              onClick={() => {
-                setFailReason(null);
-                setSubmitted({});
-                setStage("group");
-              }}
-            >
-              Adjust constraints &amp; retry
-            </button>
+      {error ? <p className={styles.error}>Backend check failed: {error}</p> : null}
+
+      {stage === "group" && members.length > 0 ? (
+        <div className={styles.readyProgress} aria-live="polite">
+          <div className={styles.readyProgressBar}>
+            <div
+              className={styles.readyProgressFill}
+              style={{ width: `${(readyCount / members.length) * 100}%` }}
+            />
           </div>
+          <span className={styles.readyProgressLabel}>
+            {readyCount === members.length
+              ? "Everyone's ready - finding your plan…"
+              : `${readyCount} of ${members.length} friends ready`}
+          </span>
         </div>
       ) : null}
-
-      {error ? <p className={styles.error}>Backend check failed: {error}</p> : null}
 
       {stage === "group" ? (
         <section className={styles.groupGrid} aria-label="Group constraints">
@@ -789,8 +806,11 @@ export default function Home() {
                 value={forms[member.id] ?? emptyConstraints()}
                 onChange={(next) => setForms((prev) => ({ ...prev, [member.id]: next }))}
                 onSubmit={() => void submitMember(member)}
+                onUnready={() => void unreadyMember(member)}
                 submitted={Boolean(submitted[member.id])}
                 submitting={Boolean(submitting[member.id])}
+                readyCount={readyCount}
+                totalMembers={members.length}
               />
             ))
           )}
