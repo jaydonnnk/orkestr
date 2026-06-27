@@ -297,6 +297,43 @@ def _proposal(plan: dict, personas: list, round_no: int) -> dict:
     }
 
 
+_DAY_PREFERENCE = ["FRI", "SAT", "SUN", "THU", "WED", "TUE", "MON"]
+
+
+def _best_group_day(personas: list):
+    """Pick the day the most members are free on (tie → preferred dinner day).
+
+    Candidates otherwise default to FRI, so a group that's only free on SAT/SUN
+    would object on every plan. Choosing the max-overlap day lets the day axis
+    actually converge instead of always failing on FRI.
+    """
+    counts: dict = {}
+    for persona in personas or []:
+        days = (persona.get("constraints") or {}).get("available_days") or []
+        for day in days:
+            key = str(day).upper()
+            counts[key] = counts.get(key, 0) + 1
+    if not counts:
+        return None
+
+    def rank(day):
+        pref = _DAY_PREFERENCE.index(day) if day in _DAY_PREFERENCE else len(_DAY_PREFERENCE)
+        return (counts[day], -pref)
+
+    return max(counts, key=rank)
+
+
+def _apply_group_day(candidates: list, personas: list) -> list:
+    """Override each candidate's day with the group's best-overlap day."""
+    best_day = _best_group_day(personas)
+    if not best_day:
+        return candidates
+    for candidate in candidates:
+        if isinstance(candidate, dict):
+            candidate["day"] = best_day
+    return candidates
+
+
 def _deterministic_candidates(personas: list, venues: list) -> list:
     venues = [venue for venue in venues if isinstance(venue, dict)]
     if not venues:
@@ -383,7 +420,8 @@ def generate_candidates(personas: list, venues: list) -> list:
         pass
 
     candidates = normalized_ai if normalized_ai else deterministic
-    return _ensure_seoul_safety(candidates, deterministic, limit=4)
+    candidates = _ensure_seoul_safety(candidates, deterministic, limit=4)
+    return _apply_group_day(candidates, personas)
 
 
 def run_negotiation(candidates: list, personas: list) -> dict:
