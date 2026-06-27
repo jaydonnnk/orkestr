@@ -429,9 +429,16 @@ def run_negotiation(candidates: list, personas: list) -> dict:
     if not candidates or not personas:
         return _seeded_negotiation(personas)
 
+    def _cost(plan):
+        try:
+            return float(plan.get("per_person") or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
     messages = []
     best_plan = None
     best_objection_count = None
+    best_cost = None
 
     for round_no, candidate in enumerate(candidates, start=1):
         if not isinstance(candidate, dict):
@@ -446,9 +453,18 @@ def run_negotiation(candidates: list, personas: list) -> dict:
             return {"plan": plan, "messages": messages}
 
         objection_count = len(objections)
-        if best_objection_count is None or objection_count <= best_objection_count:
+        cost = _cost(candidate)
+        # Prefer fewest objections; break ties by the cheapest venue so a group
+        # that's over budget on every option still lands on the least-expensive.
+        better = (
+            best_plan is None
+            or objection_count < best_objection_count
+            or (objection_count == best_objection_count and cost < best_cost)
+        )
+        if better:
             best_plan = plan
             best_objection_count = objection_count
+            best_cost = cost
 
     if best_plan is None:
         return _seeded_negotiation(personas)
