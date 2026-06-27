@@ -105,15 +105,19 @@ def _seeded_plan(personas=None) -> dict:
         "day": "FRI",
         "time": "19:30",
         "venue": {
+            "id": "seoul_garden",
             "name": "Seoul Garden",
             "address": "VivoCity #03-01",
             "lat": 1.3010,
             "lng": 103.8480,
-            "tags": ["halal", "vegetarian"],
+            "halal": True,
+            "vegetarian": True,
+            "capacity": 6,
+            "tags": ["halal", "kbbq", "meat", "vegetarian", "vegetarian_option"],
         },
         "activity": {"name": "Timezone @ VivoCity", "lat": 1.2643, "lng": 103.8222},
-        "total_cost": 400,
-        "per_person": 80,
+        "total_cost": 240,
+        "per_person": 48,
         "booking_ref": "SG-2026-0627-77",
         "mandate_status": "co-signed",
         "satisfies": [p.get("id", "UNKNOWN") for p in personas if isinstance(p, dict)] if personas else [],
@@ -413,8 +417,7 @@ def run_negotiation(candidates: list, personas: list) -> dict:
     return {"plan": best_plan, "messages": messages}
 
 
-def strike_booking(plan: dict) -> dict:
-    """Open the handshake with the Venue agent and co-sign the cart (Act 2)."""
+def _booking_basics(plan: dict) -> dict:
     plan = plan or {}
     venue = plan.get("venue") or {}
     plan_time = plan.get("time") or "19:30"
@@ -445,29 +448,161 @@ def strike_booking(plan: dict) -> dict:
         for tag in (str(tag).lower() for tag in tags)
         if tag in need_labels
     })
-
-    request = {
+    title = plan.get("title", "Dinner plan")
+    per_person = plan.get("per_person")
+    total_amount = plan.get("total_cost")
+    if per_person is not None:
+        try:
+            total_amount = float(per_person) * party_size
+        except (TypeError, ValueError):
+            total_amount = plan.get("total_cost")
+    total_amount = total_amount or 0
+    booking_ref = plan.get("booking_ref") or f"BK-{venue.get('id', 'venue')}-{day}"
+    return {
+        "plan": plan,
+        "venue": venue,
+        "title": title,
         "party_size": party_size,
         "day": day,
-        "time": request_time,
+        "plan_time": plan_time,
         "request_time": request_time,
-        "budget_total": plan.get("total_cost"),
         "needs": needs,
+        "total_amount": total_amount,
+        "per_person": per_person,
+        "booking_ref": booking_ref,
+    }
+
+
+def _fallback_strike_booking(plan: dict, error=None) -> dict:
+    basics = _booking_basics(plan)
+    request = {
+        "party_size": basics["party_size"],
+        "day": basics["day"],
+        "time": basics["request_time"],
+        "request_time": basics["request_time"],
+        "budget_total": basics["total_amount"],
+        "needs": basics["needs"],
     }
     response = venue_agent.check_availability(request)
-    counter_time = response.get("time_offered") or plan_time
+    counter_time = response.get("time_offered") or basics["plan_time"]
     response = {**response, "counter_time": counter_time}
-    booking_ref = plan.get("booking_ref") or f"BK-{venue.get('id', 'venue')}-{day}"
     cart = {
         "cart_id": "CART-1",
         "items": [{
-            "desc": f"{plan.get('title', 'Dinner plan')} - table of {party_size} - {day} {counter_time}",
-            "amount": response.get("price_total", plan.get("total_cost", 0)),
+            "desc": f"{basics['title']} - table of {basics['party_size']} - {basics['day']} {counter_time}",
+            "amount": response.get("price_total", basics["total_amount"]),
         }],
-        "booking_ref": booking_ref,
+        "booking_ref": basics["booking_ref"],
     }
-    mandate = cosign(cart, venue.get("name", "Unknown Venue"))
+    mandate = {
+        **cosign(cart, basics["venue"].get("name", "Unknown Venue")),
+        "acp_status": "fallback",
+        "vault_token": {"id": "vt_mock_fallback", "mode": "mock"},
+        "order": {"booking_ref": basics["booking_ref"], "status": "confirmed"},
+        "payment_mode": "mock",
+    }
+    if error:
+        mandate["acp_error"] = error.__class__.__name__
     return {"request": request, "response": response, "mandate": mandate}
+
+
+def strike_booking(plan: dict) -> dict:
+    """Open the ACP handshake with the merchant agent and co-sign payment."""
+    basics = _booking_basics(plan)
+    try:
+        from datetime import datetime, timedelta, timezone
+
+        from payments import acp_checkout, acp_payment
+
+        item = {
+            "id": "li_booking",
+            "desc": f"{basics['title']} - table of {basics['party_size']} - {basics['day']} {basics['plan_time']}",
+            "amount": basics["total_amount"],
+            "quantity": 1,
+            "currency": "SGD",
+        }
+        buyer = {"id": "orkestr_convener", "agent": "Convener"}
+        fulfillment = {
+            "type": "reservation",
+            "day": basics["day"],
+            "time": basics["request_time"],
+            "request_time": basics["request_time"],
+            "booked_time": basics["plan_time"],
+            "party_size": basics["party_size"],
+            "needs": basics["needs"],
+        }
+        created = acp_checkout.create_session([item], buyer, fulfillment)
+        update_payload = {
+            **fulfillment,
+            "time": basics["request_time"],
+            "counter_time": basics["plan_time"],
+        }
+        session = acp_checkout.update_session(
+            created["id"],
+            selected_fulfillment_options=update_payload,
+        )
+        expires_at = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+        allowance = {
+            "reason": "one_time",
+            "max_amount": session.get("totals", {}).get("amount_total", basics["total_amount"]),
+            "currency": "SGD",
+            "merchant_id": basics["venue"].get("id", "venue"),
+            "checkout_session_id": session["id"],
+            "expires_at": expires_at,
+        }
+        token = acp_payment.delegate_payment(allowance)
+        completed = acp_checkout.complete_session(
+            session["id"],
+            payment_data={
+                "vault_token": token["id"],
+                "mode": token.get("mode"),
+                "stripe_payment_intent": token.get("stripe_payment_intent"),
+                "booking_ref": basics["booking_ref"],
+            },
+        )
+        order = completed.get("order", {})
+        counter_time = session.get("counter_time") or basics["plan_time"]
+        request = {
+            "party_size": basics["party_size"],
+            "day": basics["day"],
+            "time": basics["request_time"],
+            "request_time": basics["request_time"],
+            "budget_total": basics["total_amount"],
+            "needs": basics["needs"],
+            "items": [item],
+            "buyer": buyer,
+            "fulfillment": fulfillment,
+            "checkout_session_id": session["id"],
+            "create_session": {
+                "items": [item],
+                "buyer": buyer,
+                "fulfillment": fulfillment,
+            },
+            "update_session": {
+                "selected_fulfillment_options": update_payload,
+            },
+        }
+        response = {
+            **session,
+            "counter_time": counter_time,
+            "time_offered": counter_time,
+        }
+        mandate = {
+            "cart_id": session["id"],
+            "merchant": basics["venue"].get("name", "Unknown Venue"),
+            "items": session.get("line_items", []),
+            "merchant_signature": session["id"],
+            "buyer_authorization": token["id"],
+            "status": "co-signed",
+            "booking_ref": order.get("booking_ref", basics["booking_ref"]),
+            "acp_status": completed.get("status", "completed"),
+            "vault_token": token,
+            "order": order,
+            "payment_mode": token.get("mode", "mock"),
+        }
+        return {"request": request, "response": response, "mandate": mandate}
+    except Exception as exc:
+        return _fallback_strike_booking(plan, error=exc)
 
 
 if __name__ == "__main__":
