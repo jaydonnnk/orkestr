@@ -639,20 +639,6 @@ export default function Home() {
     }
   }
 
-  async function loadSeededBackup() {
-    setSessionId("ORK-001");
-    setStage("working");
-    setWorking(true);
-    setError(null);
-    try {
-      setState(await readLiveState("ORK-001"));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to reach backend");
-    } finally {
-      setWorking(false);
-    }
-  }
-
   async function settleTransfers() {
     if (!sessionId || !state?.settlement.transfers?.length) {
       return;
@@ -725,16 +711,7 @@ export default function Home() {
         </div>
         <div className={styles.actions}>
           {stage === "group" ? (
-            <>
-              <span className={styles.eyebrow}>{readyCount} / {members.length || 5} ready</span>
-              <button
-                className={styles.secondaryButton}
-                type="button"
-                onClick={() => void loadSeededBackup()}
-              >
-                Use seeded demo (ORK-001)
-              </button>
-            </>
+            <span className={styles.eyebrow}>{readyCount} / {members.length || 5} ready</span>
           ) : null}
         </div>
       </section>
